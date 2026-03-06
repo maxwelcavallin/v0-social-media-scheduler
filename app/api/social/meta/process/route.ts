@@ -18,10 +18,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
-  // Always ensure redirectUri matches exactly what was registered in Facebook App settings
-  // Use NEXT_PUBLIC_APP_URL as the canonical base — never rely on client-passed values
-  const canonicalBase = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || `https://${request.headers.get("host")}`
-  redirectUri = `${canonicalBase}/api/social/meta/callback`
+  // Build redirectUri from the real request host — ignores NEXT_PUBLIC_APP_URL
+  // which may be incorrectly set to localhost in env vars
+  const host = request.headers.get("host") ?? ""
+  const protocol = host.startsWith("localhost") ? "http" : "https"
+  redirectUri = `${protocol}://${host}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET
