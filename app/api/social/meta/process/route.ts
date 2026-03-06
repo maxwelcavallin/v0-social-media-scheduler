@@ -11,11 +11,17 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { code, workspaceId, redirectUri } = body
+  const { code, workspaceId } = body
+  let { redirectUri } = body
 
-  if (!code || !workspaceId || !redirectUri) {
+  if (!code || !workspaceId) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
+
+  // Always ensure redirectUri matches exactly what was registered in Facebook App settings
+  // Use NEXT_PUBLIC_APP_URL as the canonical base — never rely on client-passed values
+  const canonicalBase = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || `https://${request.headers.get("host")}`
+  redirectUri = `${canonicalBase}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET
@@ -33,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     if (tokenData.error) {
       return NextResponse.json(
-        { error: `Erro ao trocar código: ${tokenData.error.message}` },
+        { error: `Erro ao trocar código (redirect_uri: ${redirectUri}): ${tokenData.error.message} [${tokenData.error.code}]` },
         { status: 400 }
       )
     }
