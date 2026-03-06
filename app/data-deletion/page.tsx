@@ -63,7 +63,7 @@ export default function DataDeletionPage() {
                 {
                   step: "2",
                   title: "Por e-mail",
-                  description: "Envie um e-mail para privacidade@socialdog.app com o assunto \"Solicitação de Exclusão de Dados\" informando o e-mail cadastrado na plataforma. Confirmaremos o recebimento em até 5 dias úteis.",
+                  description: "Envie um e-mail para lgpd@list.dog com o assunto \"Solicitação de Exclusão de Dados\" informando o e-mail cadastrado na plataforma. Confirmaremos o recebimento em até 5 dias úteis.",
                 },
                 {
                   step: "3",
@@ -152,8 +152,8 @@ export default function DataDeletionPage() {
                     <p className="text-sm font-medium text-foreground">Duvidas ou solicitações</p>
                     <p className="text-sm text-muted-foreground mt-0.5">
                       Entre em contato pelo e-mail{" "}
-                      <a href="mailto:privacidade@socialdog.app" className="text-primary hover:underline font-medium">
-                        privacidade@socialdog.app
+                      <a href="mailto:lgpd@list.dog" className="text-primary hover:underline font-medium">
+                        lgpd@list.dog
                       </a>
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">

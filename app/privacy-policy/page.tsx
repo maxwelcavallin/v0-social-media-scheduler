@@ -130,7 +130,7 @@ export default function PrivacyPolicyPage() {
               <li><strong className="text-foreground">Revogação de consentimento:</strong> retirar seu consentimento a qualquer momento.</li>
             </ul>
             <p className="text-muted-foreground leading-relaxed mt-3">
-              Para exercer qualquer um desses direitos, entre em contato conosco pelo e-mail: <strong className="text-foreground">privacidade@socialdog.app</strong>
+              Para exercer qualquer um desses direitos, entre em contato conosco pelo e-mail: <strong className="text-foreground">lgpd@list.dog</strong>
             </p>
           </section>
 
@@ -162,7 +162,7 @@ export default function PrivacyPolicyPage() {
             </p>
             <div className="mt-3 p-4 bg-muted rounded-lg">
               <p className="text-sm text-foreground font-medium">SocialDog</p>
-              <p className="text-sm text-muted-foreground mt-1">E-mail: privacidade@socialdog.app</p>
+              <p className="text-sm text-muted-foreground mt-1">E-mail: lgpd@list.dog</p>
             </div>
           </section>
         </div>
