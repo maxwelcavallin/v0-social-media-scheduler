@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Instagram, Facebook, Link2, Plus, Trash2, RefreshCw } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
+import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-button"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
 
 interface Props {
@@ -65,7 +66,10 @@ export default async function AccountsPage({ params }: Props) {
           <h1 className="text-2xl font-bold text-foreground">Contas conectadas</h1>
           <p className="text-muted-foreground text-sm mt-1">{ws.name}</p>
         </div>
-        <ConnectMetaButton workspaceId={workspaceId} />
+        <div className="flex items-center gap-2">
+          <ConnectInstagramButton workspaceId={workspaceId} />
+          <ConnectMetaButton workspaceId={workspaceId} />
+        </div>
       </div>
 
       {/* Info Card */}
@@ -76,9 +80,10 @@ export default async function AccountsPage({ params }: Props) {
               <Facebook className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium text-foreground">Como funciona a conexão</p>
+              <p className="text-sm font-medium text-foreground">Como conectar suas contas</p>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Faça login uma vez com o Facebook e o SocialDog identificará automaticamente todas as suas Páginas e contas do Instagram Business vinculadas ao Meta Business Suite. Nenhuma senha adicional é necessária.
+                <strong>Via Facebook:</strong> conecta Páginas do Facebook e contas Instagram Business vinculadas ao Meta Business Suite.<br />
+                <strong>Instagram direto:</strong> conecta contas Instagram Creator/pessoal sem precisar de uma Página do Facebook. Use o mesmo App ID do Facebook — o Instagram usa o mesmo sistema OAuth da Meta.
               </p>
             </div>
           </div>
@@ -90,7 +95,12 @@ export default async function AccountsPage({ params }: Props) {
           icon={Link2}
           title="Nenhuma conta conectada"
           description="Conecte seu Facebook para descobrir automaticamente suas páginas e contas do Instagram Business."
-          action={<ConnectMetaButton workspaceId={workspaceId} />}
+          action={
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              <ConnectInstagramButton workspaceId={workspaceId} />
+              <ConnectMetaButton workspaceId={workspaceId} />
+            </div>
+          }
         />
       ) : (
         <div className="flex flex-col gap-6">
