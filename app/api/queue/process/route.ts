@@ -32,7 +32,7 @@ async function processQueue() {
       sa.account_id,
       sa.page_id,
       sa.access_token,
-      ARRAY_AGG(pm.media_url ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_urls,
+      ARRAY_AGG(pm.url ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_urls,
       ARRAY_AGG(pm.media_type ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_types
     FROM post_queue pq
     JOIN post_targets pt ON pt.id = pq.post_target_id

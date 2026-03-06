@@ -13,14 +13,14 @@ export default async function DashboardCalendarPage() {
       ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
       ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
       COUNT(DISTINCT pm.id)::int as media_count,
-      (SELECT pm2.media_url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
+      (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
     FROM posts p
     JOIN "organization" o ON o.id = p.workspace_id
-    JOIN "member" m ON m."organizationId" = o.id
+    JOIN "member" m ON m.organization_id = o.id
     LEFT JOIN post_targets pt ON pt.post_id = p.id
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
-    WHERE m."userId" = ${session.user.id}
+    WHERE m.user_id = ${session.user.id}
       AND p.scheduled_at IS NOT NULL
     GROUP BY p.id, o.id, o.name
     ORDER BY p.scheduled_at ASC

@@ -19,8 +19,8 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
     sql`
       SELECT o.id, o.name
       FROM "organization" o
-      JOIN "member" m ON o.id = m."organizationId"
-      WHERE o.id = ${workspaceId} AND m."userId" = ${session.user.id}
+      JOIN "member" m ON o.id = m.organization_id
+      WHERE o.id = ${workspaceId} AND m.user_id = ${session.user.id}
       LIMIT 1
     `,
     sql`
@@ -33,7 +33,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
         COUNT(DISTINCT pm.id)::int as media_count,
-        (SELECT pm2.media_url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
+        (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
       FROM posts p
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
