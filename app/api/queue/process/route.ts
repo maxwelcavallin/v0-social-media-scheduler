@@ -3,12 +3,23 @@ import sql from "@/lib/db"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
 
-// Called by Vercel Cron every 5 minutes (no auth needed for cron)
-// Also called internally after immediate posts with x-queue-secret header
+// Allow up to 300s for processing scheduled posts (videos take time)
+export const maxDuration = 300
+
+// GET — called by Vercel Cron (Authorization: Bearer CRON_SECRET)
 export async function GET(request: NextRequest) {
+  const authHeader = request.headers.get("authorization")
+  const cronSecret = process.env.CRON_SECRET
+
+  // If CRON_SECRET is set, validate Vercel's cron bearer token
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   return processQueue()
 }
 
+// POST — called internally with x-queue-secret after immediate posts
 export async function POST(request: NextRequest) {
   const secret = request.headers.get("x-queue-secret")
   if (secret !== (process.env.QUEUE_SECRET || "postflow-queue")) {

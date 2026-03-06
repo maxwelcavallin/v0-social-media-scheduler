@@ -72,7 +72,11 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   const [mediaFiles, setMediaFiles] = useState<File[]>([])
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([])
   const [charCount, setCharCount] = useState(0)
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const MAX_SIZE_MB = 15
+  const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
   const { register, handleSubmit, watch, setValue, formState: { errors }, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -91,6 +95,15 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
 
+    // Validate size before accepting
+    const oversized = files.find((f) => f.size > MAX_SIZE_BYTES)
+    if (oversized) {
+      setError(`"${oversized.name}" excede o limite de ${MAX_SIZE_MB}MB.`)
+      e.target.value = ""
+      return
+    }
+
+    setError(null)
     const maxFiles = postType === "carousel" ? 10 : 1
     const newFiles = files.slice(0, maxFiles - mediaFiles.length)
 
@@ -118,23 +131,52 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     setError(null)
 
     try {
-      // Upload media
+      // Upload media with progress tracking via XMLHttpRequest
       const uploadedMedia: Array<{ url: string; type: string; name: string }> = []
-      for (const file of mediaFiles) {
-        const formData = new FormData()
-        formData.append("file", file)
-        const uploadRes = await fetch("/api/media/upload", {
-          method: "POST",
-          body: formData,
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const file = mediaFiles[i]
+        setUploadProgress(0)
+
+        const uploadData = await new Promise<any>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          const formData = new FormData()
+          formData.append("file", file)
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100)
+              setUploadProgress(pct)
+            }
+          }
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try { resolve(JSON.parse(xhr.responseText)) }
+              catch { reject(new Error("Resposta inválida do servidor")) }
+            } else {
+              try {
+                const err = JSON.parse(xhr.responseText)
+                reject(new Error(err.error || `Erro ${xhr.status} ao fazer upload`))
+              } catch {
+                reject(new Error(`Erro ${xhr.status} ao fazer upload`))
+              }
+            }
+          }
+          xhr.onerror = () => reject(new Error("Falha na conexão durante o upload"))
+          xhr.ontimeout = () => reject(new Error("Tempo esgotado no upload. Tente um arquivo menor."))
+          xhr.timeout = 120000 // 2 min timeout
+
+          xhr.open("POST", "/api/media/upload")
+          xhr.send(formData)
         })
-        if (!uploadRes.ok) {
-          setError("Erro ao fazer upload da mídia")
-          setLoading(false)
-          return
-        }
-        const uploadData = await uploadRes.json()
-        uploadedMedia.push({ url: uploadData.url, type: file.type.startsWith("video") ? "video" : "image", name: file.name })
+
+        uploadedMedia.push({
+          url: uploadData.url,
+          type: uploadData.type || (file.type.startsWith("video") ? "video" : "image"),
+          name: file.name,
+        })
       }
+      setUploadProgress(0)
 
       const res = await fetch("/api/posts", {
         method: "POST",
@@ -244,9 +286,10 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                   <div className="flex flex-col gap-2">
                     <Label>
                       Mídia
-                      {postType === "carousel" && (
-                        <span className="text-xs text-muted-foreground ml-2">máx. 10 itens</span>
-                      )}
+                      <span className="text-xs text-muted-foreground ml-2 font-normal">
+                        máx. {MAX_SIZE_MB}MB · imagem ou vídeo
+                        {postType === "carousel" && " · até 10 itens"}
+                      </span>
                     </Label>
 
                     {mediaPreviews.length > 0 && (
@@ -288,6 +331,22 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                       </button>
                     )}
                   </div>
+
+                  {/* Upload progress bar */}
+                  {loading && uploadProgress > 0 && uploadProgress < 100 && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Enviando mídia...</span>
+                        <span>{uploadProgress}%</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-200 rounded-full"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Caption — not shown for stories */}
                   {postType !== "story" && <div className="flex flex-col gap-2">
