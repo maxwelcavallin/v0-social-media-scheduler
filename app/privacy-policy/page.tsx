@@ -1,5 +1,6 @@
 import Link from "next/link"
-import { Zap, ArrowLeft } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
+import Image from "next/image"
 
 export const metadata = {
   title: "Política de Privacidade — SocialDog",
@@ -13,9 +14,7 @@ export default function PrivacyPolicyPage() {
       <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="w-3.5 h-3.5 text-primary-foreground" />
-            </div>
+            <Image src="/logo-dog.png" alt="SocialDog" width={28} height={28} className="rounded-lg" />
             <span className="font-bold text-base text-foreground">SocialDog</span>
           </Link>
           <Link

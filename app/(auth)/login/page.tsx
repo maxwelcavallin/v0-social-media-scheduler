@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Zap, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
+import Image from "next/image"
 
 const schema = z.object({
   email: z.string().email("E-mail inválido"),
@@ -47,9 +48,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4 font-sans">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-            <Zap className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <Image src="/logo-dog.png" alt="SocialDog" width={36} height={36} className="rounded-xl" />
           <span className="font-bold text-xl text-foreground">SocialDog</span>
         </div>
 

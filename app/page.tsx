@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -19,9 +20,7 @@ export default function HomePage() {
       <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Zap className="w-4 h-4 text-primary-foreground" />
-            </div>
+            <Image src="/logo-dog.png" alt="SocialDog" width={32} height={32} className="rounded-lg" />
             <span className="font-semibold text-lg text-foreground">SocialDog</span>
           </div>
           <nav className="hidden md:flex items-center gap-6">
@@ -166,9 +165,7 @@ export default function HomePage() {
       <footer className="border-t border-border py-8">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
-              <Zap className="w-3 h-3 text-primary-foreground" />
-            </div>
+            <Image src="/logo-dog.png" alt="SocialDog" width={24} height={24} className="rounded-md" />
             <span className="font-semibold text-sm text-foreground">SocialDog</span>
           </div>
           <div className="flex items-center gap-4">
