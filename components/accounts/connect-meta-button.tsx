@@ -10,7 +10,7 @@ interface Props {
 export function ConnectMetaButton({ workspaceId }: Props) {
   const handleConnect = () => {
     const params = new URLSearchParams({
-      client_id: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || "",
+      client_id: process.env.NEXT_PUBLIC_APP_FACEBOOK_ID || "",
       redirect_uri: `${window.location.origin}/api/social/meta/callback`,
       scope: [
         "pages_show_list",
