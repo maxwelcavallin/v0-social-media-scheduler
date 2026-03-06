@@ -31,6 +31,8 @@ export default async function AccountsPage({ params }: Props) {
   const session = await getSession()
   if (!session) redirect("/login")
 
+  console.log("[accounts/page] workspaceId:", workspaceId, "userId:", session.user.id)
+
   const [workspace, accounts] = await Promise.all([
     sql`
       SELECT o.id, o.name
@@ -46,6 +48,8 @@ export default async function AccountsPage({ params }: Props) {
       ORDER BY platform, created_at ASC
     `,
   ])
+
+  console.log("[accounts/page] workspace:", workspace.length, "accounts:", accounts.length)
 
   if (workspace.length === 0) notFound()
 

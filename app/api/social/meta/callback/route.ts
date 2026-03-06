@@ -7,6 +7,7 @@ const GRAPH_API = "https://graph.facebook.com/v22.0"
 export async function GET(request: NextRequest) {
   const session = await getSession()
   if (!session) {
+    console.log("[meta/callback] No session found, redirecting to login")
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code")
   const workspaceId = searchParams.get("state")
   const error = searchParams.get("error")
+
+  console.log("[meta/callback] state/workspaceId:", workspaceId)
+  console.log("[meta/callback] code present:", !!code)
+  console.log("[meta/callback] error:", error)
 
   if (error || !code || !workspaceId) {
     return NextResponse.redirect(
@@ -23,7 +28,10 @@ export async function GET(request: NextRequest) {
 
   const appId = process.env.FACEBOOK_APP_ID!
   const appSecret = process.env.FACEBOOK_APP_SECRET!
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/social/meta/callback`
+  // Use the actual request origin so redirect_uri always matches what the button sent
+  const origin = request.nextUrl.origin
+  const redirectUri = `${origin}/api/social/meta/callback`
+  console.log("[meta/callback] redirectUri:", redirectUri)
 
   try {
     // Exchange code for short-lived user access token
@@ -52,6 +60,8 @@ export async function GET(request: NextRequest) {
     )
     const pagesData = await pagesRes.json()
 
+    console.log("[meta/callback] pagesData:", JSON.stringify(pagesData?.data?.map((p: any) => ({ id: p.id, name: p.name, hasIG: !!p.instagram_business_account }))))
+
     if (!pagesData.data || pagesData.data.length === 0) {
       return NextResponse.redirect(
         new URL(`/workspace/${workspaceId}/accounts?error=no_pages`, request.url)
@@ -64,6 +74,7 @@ export async function GET(request: NextRequest) {
       const pageToken = page.access_token
 
       // Save Facebook Page
+      console.log("[meta/callback] Saving FB page:", page.name, "to workspace:", workspaceId)
       await sql`
         INSERT INTO social_accounts (
           id, workspace_id, platform, account_name, account_id, page_id,
@@ -118,6 +129,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    console.log("[meta/callback] Total saved:", savedCount)
     return NextResponse.redirect(
       new URL(`/workspace/${workspaceId}/accounts?connected=${savedCount}`, request.url)
     )
