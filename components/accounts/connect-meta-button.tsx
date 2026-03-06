@@ -9,9 +9,8 @@ interface Props {
 
 export function ConnectMetaButton({ workspaceId }: Props) {
   const handleConnect = () => {
-    // Use NEXT_PUBLIC_APP_URL if set, else fall back to current origin
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
-    const redirectUri = `${baseUrl}/api/social/meta/callback`
+    // Always use the actual browser origin — runs client-side, window is always available
+    const redirectUri = `${window.location.origin}/api/social/meta/callback`
 
     // Encode workspaceId AND the exact redirectUri in state so the callback
     // can pass the same value back for the token exchange
