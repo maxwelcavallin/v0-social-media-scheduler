@@ -10,7 +10,6 @@ const pool = new Pool({
 })
 
 export const auth = betterAuth({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
   database: {
     db: pool,
     type: "pg",
@@ -33,12 +32,14 @@ export const auth = betterAuth({
       maxAge: 5 * 60,
     },
   },
-  trustedOrigins: [
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    "http://localhost:3000",
-    "https://*.vusercontent.net",
-    "https://*.vercel.app",
-  ],
+  trustedOrigins: (origin) => {
+    if (!origin) return true
+    if (origin.includes("localhost")) return true
+    if (origin.includes("vusercontent.net")) return true
+    if (origin.includes("vercel.app")) return true
+    if (process.env.NEXT_PUBLIC_APP_URL && origin === process.env.NEXT_PUBLIC_APP_URL) return true
+    return false
+  },
 })
 
 export type Session = typeof auth.$Infer.Session
