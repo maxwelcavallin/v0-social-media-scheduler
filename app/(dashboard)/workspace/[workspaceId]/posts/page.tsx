@@ -49,7 +49,7 @@ export default async function WorkspacePostsPage({ params }: Props) {
       FROM social_accounts WHERE workspace_id = ${workspaceId} AND is_active = true
     `,
     sql`
-      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at, p.error_message,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
         COUNT(DISTINCT pm.id)::int as media_count,
@@ -145,6 +145,11 @@ export default async function WorkspacePostsPage({ params }: Props) {
                   <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed">
                     {post.content || "Sem legenda"}
                   </p>
+                  {post.status === "failed" && post.error_message && (
+                    <p className="text-xs text-destructive bg-destructive/5 rounded px-2 py-1 mb-2 line-clamp-2 leading-relaxed">
+                      {post.error_message}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                       {post.scheduled_at

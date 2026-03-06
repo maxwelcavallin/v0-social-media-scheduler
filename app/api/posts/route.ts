@@ -82,20 +82,35 @@ async function publishToInstagram(item: {
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
   if (media_urls.length === 1) {
-    const isVideo = media_types?.[0] === "video" || post_type === "reel"
+    const isStory = post_type === "story"
+    const isReel = post_type === "reel"
+    const isVideo = media_types?.[0] === "video" || isReel
+
+    let mediaType: string
+    if (isStory) mediaType = "STORIES"
+    else if (isReel) mediaType = "REELS"
+    else mediaType = "IMAGE"
+
+    const containerBody: Record<string, string | boolean> = {
+      media_type: mediaType,
+      access_token,
+    }
+    if (isVideo || isReel) {
+      containerBody.video_url = media_urls[0]
+    } else {
+      containerBody.image_url = media_urls[0]
+    }
+    if (!isStory && content) {
+      containerBody.caption = content
+    }
+
     const containerRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: !isVideo ? media_urls[0] : undefined,
-        video_url: isVideo ? media_urls[0] : undefined,
-        media_type: isVideo ? "REELS" : "IMAGE",
-        caption: content,
-        access_token,
-      }),
+      body: JSON.stringify(containerBody),
     })
     const containerData = await containerRes.json()
-    if (containerData.error) throw new Error(containerData.error.message)
+    if (containerData.error) throw new Error(`Container error: ${containerData.error.message} [${containerData.error.code}]`)
 
     // Wait for processing
     for (let i = 0; i < 15; i++) {
@@ -286,9 +301,11 @@ export async function POST(request: NextRequest) {
             WHERE id = ${target.targetId}
           `
         } catch (err: any) {
-          publishErrors.push(`${target.platform}: ${err.message}`)
+          const errMsg = err?.message || String(err)
+          console.error(`[posts] publish failed for ${target.platform}:`, errMsg)
+          publishErrors.push(`${target.platform}: ${errMsg}`)
           await sql`
-            UPDATE post_targets SET status = 'failed', error_message = ${err.message}
+            UPDATE post_targets SET status = 'failed', error_message = ${errMsg}
             WHERE id = ${target.targetId}
           `
         }

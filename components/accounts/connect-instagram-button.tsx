@@ -27,7 +27,8 @@ export function ConnectInstagramButton({ workspaceId }: Props) {
       state,
     })
 
-    window.location.href = `https://api.instagram.com/oauth/authorize?${params.toString()}`
+    // Use Facebook OAuth — Instagram uses the same Meta OAuth system
+    window.location.href = `https://www.facebook.com/v22.0/dialog/oauth?${params.toString()}`
   }
 
   return (
