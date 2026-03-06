@@ -6,6 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ["pg", "better-auth"],
 }
 
 export default nextConfig
