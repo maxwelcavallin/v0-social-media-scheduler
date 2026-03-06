@@ -180,9 +180,20 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     }
   }
 
+  // Convert a Date to "YYYY-MM-DDTHH:mm" in America/Sao_Paulo timezone
+  const toBrasiliaLocal = (date: Date): string => {
+    // Get the date parts in Brasília timezone
+    const fmt = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+    })
+    return fmt.format(date).replace(" ", "T")
+  }
+
   const minDate = new Date()
   minDate.setMinutes(minDate.getMinutes() + 5)
-  const minDateStr = minDate.toISOString().slice(0, 16)
+  const minDateStr = toBrasiliaLocal(minDate)
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

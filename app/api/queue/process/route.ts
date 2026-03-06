@@ -21,12 +21,12 @@ async function processQueue() {
   const pendingItems = await sql`
     SELECT
       pq.id as queue_id,
-      pq.post_target_id,
+      pq.post_id,
       pq.attempts,
       pq.max_attempts,
       pt.post_type,
       pt.id as target_id,
-      p.id as post_id,
+      p.id as post_id_ref,
       p.content,
       sa.platform,
       sa.account_id,
@@ -35,14 +35,14 @@ async function processQueue() {
       ARRAY_AGG(pm.url ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_urls,
       ARRAY_AGG(pm.media_type ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_types
     FROM post_queue pq
-    JOIN post_targets pt ON pt.id = pq.post_target_id
-    JOIN posts p ON p.id = pt.post_id
+    JOIN posts p ON p.id = pq.post_id
+    JOIN post_targets pt ON pt.post_id = p.id
     JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
     WHERE pq.status IN ('pending', 'processing')
       AND pq.scheduled_at <= NOW()
       AND pq.attempts < pq.max_attempts
-    GROUP BY pq.id, pq.post_target_id, pq.attempts, pq.max_attempts,
+    GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts,
              pt.post_type, pt.id, p.id, p.content,
              sa.platform, sa.account_id, sa.page_id, sa.access_token
     LIMIT 10
@@ -73,10 +73,10 @@ async function processQueue() {
 
       const pendingTargets = await sql`
         SELECT COUNT(*)::int as count FROM post_targets
-        WHERE post_id = ${item.post_id} AND status != 'published'
+        WHERE post_id = ${item.post_id_ref} AND status != 'published'
       `
       if (pendingTargets[0].count === 0) {
-        await sql`UPDATE posts SET status = 'published', published_at = NOW() WHERE id = ${item.post_id}`
+        await sql`UPDATE posts SET status = 'published', published_at = NOW() WHERE id = ${item.post_id_ref}`
       }
 
       results.push({ queueId: item.queue_id, status: "published" })
@@ -92,7 +92,7 @@ async function processQueue() {
       `
       if (isMaxAttempts) {
         await sql`UPDATE post_targets SET status = 'failed', error_message = ${err.message} WHERE id = ${item.target_id}`
-        await sql`UPDATE posts SET status = 'failed', error_message = ${err.message} WHERE id = ${item.post_id}`
+        await sql`UPDATE posts SET status = 'failed', error_message = ${err.message} WHERE id = ${item.post_id_ref}`
       }
 
       results.push({ queueId: item.queue_id, status: "failed", error: err.message })

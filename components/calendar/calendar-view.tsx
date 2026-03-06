@@ -13,9 +13,28 @@ import {
   isToday,
   addMonths,
   subMonths,
-  parseISO,
 } from "date-fns"
 import { ptBR } from "date-fns/locale"
+
+// Parse an ISO string and return a Date adjusted to Brasília (UTC-3)
+// so comparisons and display are always in the correct local time.
+const parseBrasilia = (iso: string): Date => {
+  // Create a date using the Intl API to get the Brasília wall-clock time
+  const utc = new Date(iso)
+  // Offset Brasília is UTC-3 = -180 minutes
+  const brasiliaOffset = -3 * 60
+  const localOffset = utc.getTimezoneOffset() // browser/server offset in minutes (positive = behind UTC)
+  const diff = (localOffset + brasiliaOffset) * 60 * 1000 // ms to subtract
+  return new Date(utc.getTime() - diff)
+}
+
+const formatTimeBrasilia = (iso: string): string => {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso))
+}
 import { ChevronLeft, ChevronRight, Instagram, Facebook, ImageIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -71,7 +90,7 @@ export function CalendarView({ posts, showWorkspace }: Props) {
   const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 
   const getPostsForDay = (day: Date) =>
-    posts.filter((p) => p.scheduled_at && isSameDay(parseISO(p.scheduled_at), day))
+    posts.filter((p) => p.scheduled_at && isSameDay(parseBrasilia(p.scheduled_at), day))
 
   const selectedDayPosts = selectedDay ? getPostsForDay(selectedDay) : []
 
@@ -253,7 +272,7 @@ export function CalendarView({ posts, showWorkspace }: Props) {
                   <div className="flex items-center gap-2">
                     {post.scheduled_at && (
                       <span className="text-xs text-muted-foreground">
-                        {format(parseISO(post.scheduled_at), "HH:mm")}
+                        {formatTimeBrasilia(post.scheduled_at)}
                       </span>
                     )}
                     <Badge

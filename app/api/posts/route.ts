@@ -26,7 +26,14 @@ export async function POST(request: NextRequest) {
   }
 
   const status = scheduleType === "now" ? "draft" : "scheduled"
-  const finalScheduledAt = scheduleType === "scheduled" ? scheduledAt : null
+  // scheduledAt comes as "YYYY-MM-DDTHH:mm" in Brasília time (UTC-3)
+  // Convert to UTC by appending -03:00 so the DB stores the correct UTC value
+  let finalScheduledAt: string | null = null
+  if (scheduleType === "scheduled" && scheduledAt) {
+    // If already has timezone info, use as-is; otherwise treat as Brasília (UTC-3)
+    const hasTz = /[Z+\-]\d{2}:\d{2}$/.test(scheduledAt) || scheduledAt.endsWith("Z")
+    finalScheduledAt = hasTz ? new Date(scheduledAt).toISOString() : new Date(`${scheduledAt}-03:00`).toISOString()
+  }
 
   try {
     // Create post
@@ -66,9 +73,11 @@ export async function POST(request: NextRequest) {
 
     // If publishing now, trigger the queue processor
     if (scheduleType === "now") {
-      fetch(`${process.env.BETTER_AUTH_URL || "http://localhost:3000"}/api/queue/process`, {
+      const host = request.headers.get("host") ?? "localhost:3000"
+      const protocol = host.startsWith("localhost") ? "http" : "https"
+      fetch(`${protocol}://${host}/api/queue/process`, {
         method: "POST",
-        headers: { "x-queue-secret": process.env.QUEUE_SECRET || "" },
+        headers: { "x-queue-secret": process.env.QUEUE_SECRET || "postflow-queue" },
       }).catch(() => {})
     }
 
