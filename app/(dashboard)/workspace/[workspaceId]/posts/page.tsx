@@ -39,8 +39,8 @@ export default async function WorkspacePostsPage({ params }: Props) {
   const [workspace, accounts, posts] = await Promise.all([
     sql`
       SELECT o.id, o.name FROM "organization" o
-      JOIN "member" m ON o.id = m."organizationId"
-      WHERE o.id = ${workspaceId} AND m."userId" = ${session.user.id}
+      JOIN "member" m ON o.id = m.organization_id
+      WHERE o.id = ${workspaceId} AND m.user_id = ${session.user.id}
       LIMIT 1
     `,
     sql`

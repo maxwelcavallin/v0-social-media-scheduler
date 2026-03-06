@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const org = await sql`
-      INSERT INTO "organization" (id, name, slug, "createdAt")
+      INSERT INTO "organization" (id, name, slug, created_at)
       VALUES (gen_random_uuid()::text, ${name}, ${slug}, NOW())
       RETURNING id, name, slug
     `
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     // Add user as owner
     await sql`
-      INSERT INTO "member" (id, "organizationId", "userId", role, "createdAt")
+      INSERT INTO "member" (id, organization_id, user_id, role, created_at)
       VALUES (gen_random_uuid()::text, ${orgId}, ${session.user.id}, 'owner', NOW())
     `
 

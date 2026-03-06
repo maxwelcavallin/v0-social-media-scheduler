@@ -19,9 +19,9 @@ export default async function DashboardLayout({
   const workspaces = await sql`
     SELECT o.id, o.name, o.slug, o.logo
     FROM "organization" o
-    JOIN "member" m ON o.id = m."organizationId"
-    WHERE m."userId" = ${session.user.id}
-    ORDER BY o."createdAt" ASC
+    JOIN "member" m ON o.id = m.organization_id
+    WHERE m.user_id = ${session.user.id}
+    ORDER BY o.created_at ASC
   `
 
   return (

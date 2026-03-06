@@ -32,8 +32,8 @@ export default async function WorkspacePage({ params }: Props) {
     sql`
       SELECT o.id, o.name, o.slug
       FROM "organization" o
-      JOIN "member" m ON o.id = m."organizationId"
-      WHERE o.id = ${workspaceId} AND m."userId" = ${session.user.id}
+      JOIN "member" m ON o.id = m.organization_id
+      WHERE o.id = ${workspaceId} AND m.user_id = ${session.user.id}
       LIMIT 1
     `,
     sql`

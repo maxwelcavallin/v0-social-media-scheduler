@@ -16,7 +16,7 @@ export async function PATCH(
   // Verify ownership
   const membership = await sql`
     SELECT id FROM "member"
-    WHERE "organizationId" = ${workspaceId} AND "userId" = ${session.user.id}
+    WHERE organization_id = ${workspaceId} AND user_id = ${session.user.id}
     LIMIT 1
   `
   if (membership.length === 0)

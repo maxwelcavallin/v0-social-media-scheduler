@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Building2, Plus, CalendarDays, ImageIcon, CheckCircle2, Clock } from "lucide-react"
+import { Building2, Plus, ImageIcon, CheckCircle2, Clock } from "lucide-react"
 import Link from "next/link"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
 import { EmptyState } from "@/components/dashboard/empty-state"
@@ -15,16 +15,16 @@ export default async function DashboardPage() {
 
   const [workspaces, recentPosts, stats] = await Promise.all([
     sql`
-      SELECT o.id, o.name, o.slug, o.logo, o."createdAt",
+      SELECT o.id, o.name, o.slug, o.logo, o.created_at,
         COUNT(DISTINCT sa.id)::int as accounts_count,
         COUNT(DISTINCT p.id)::int as posts_count
       FROM "organization" o
-      JOIN "member" m ON o.id = m."organizationId"
+      JOIN "member" m ON o.id = m.organization_id
       LEFT JOIN social_accounts sa ON sa.workspace_id = o.id AND sa.is_active = true
       LEFT JOIN posts p ON p.workspace_id = o.id
-      WHERE m."userId" = ${session.user.id}
-      GROUP BY o.id, o.name, o.slug, o.logo, o."createdAt"
-      ORDER BY o."createdAt" ASC
+      WHERE m.user_id = ${session.user.id}
+      GROUP BY o.id, o.name, o.slug, o.logo, o.created_at
+      ORDER BY o.created_at ASC
     `,
     sql`
       SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
@@ -32,9 +32,9 @@ export default async function DashboardPage() {
         COUNT(DISTINCT pt.id)::int as platforms_count
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
-      JOIN "member" m ON o.id = m."organizationId"
+      JOIN "member" m ON o.id = m.organization_id
       LEFT JOIN post_targets pt ON pt.post_id = p.id
-      WHERE m."userId" = ${session.user.id}
+      WHERE m.user_id = ${session.user.id}
       GROUP BY p.id, p.content, p.status, p.scheduled_at, p.created_at, o.name
       ORDER BY p.created_at DESC
       LIMIT 5
@@ -45,10 +45,10 @@ export default async function DashboardPage() {
         COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'published')::int as published,
         COUNT(DISTINCT sa.id)::int as connected_accounts
       FROM "organization" o
-      JOIN "member" m ON o.id = m."organizationId"
+      JOIN "member" m ON o.id = m.organization_id
       LEFT JOIN posts p ON p.workspace_id = o.id
       LEFT JOIN social_accounts sa ON sa.workspace_id = o.id AND sa.is_active = true
-      WHERE m."userId" = ${session.user.id}
+      WHERE m.user_id = ${session.user.id}
     `,
   ])
 

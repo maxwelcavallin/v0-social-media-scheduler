@@ -17,9 +17,9 @@ export default async function WorkspaceLayout({ children, params }: Props) {
   const membership = await sql`
     SELECT m.role, o.name
     FROM "member" m
-    JOIN "organization" o ON o.id = m."organizationId"
-    WHERE m."userId" = ${session.user.id}
-      AND m."organizationId" = ${workspaceId}
+    JOIN "organization" o ON o.id = m.organization_id
+    WHERE m.user_id = ${session.user.id}
+      AND m.organization_id = ${workspaceId}
     LIMIT 1
   `
 

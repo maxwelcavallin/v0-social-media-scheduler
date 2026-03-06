@@ -16,8 +16,8 @@ export async function DELETE(
   // Verify ownership through workspace membership
   const account = await sql`
     SELECT sa.id FROM social_accounts sa
-    JOIN "member" m ON m."organizationId" = sa.workspace_id
-    WHERE sa.id = ${accountId} AND m."userId" = ${session.user.id}
+    JOIN "member" m ON m.organization_id = sa.workspace_id
+    WHERE sa.id = ${accountId} AND m.user_id = ${session.user.id}
     LIMIT 1
   `
 

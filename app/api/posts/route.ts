@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Verify workspace access
   const membership = await sql`
     SELECT id FROM "member"
-    WHERE "organizationId" = ${workspaceId} AND "userId" = ${session.user.id}
+    WHERE organization_id = ${workspaceId} AND user_id = ${session.user.id}
     LIMIT 1
   `
   if (membership.length === 0) {
@@ -43,33 +43,30 @@ export async function POST(request: NextRequest) {
         const m = media[i]
         const mediaType = m.type === "video" ? "video" : "image"
         await sql`
-          INSERT INTO post_media (id, post_id, media_url, media_type, mime_type, order_index, created_at)
-          VALUES (gen_random_uuid(), ${postId}, ${m.url}, ${mediaType}, ${m.name}, ${i}, NOW())
+          INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
+          VALUES (gen_random_uuid(), ${postId}, ${m.url}, ${mediaType}, ${i}, NOW())
         `
       }
     }
 
     // Create post targets for each account
     for (const accountId of accountIds) {
-      const target = await sql`
+      await sql`
         INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
         VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType}, 'pending', NOW())
-        RETURNING id
-      `
-      const targetId = target[0].id
-
-      // Add to queue
-      const queueScheduledAt = finalScheduledAt || new Date().toISOString()
-      await sql`
-        INSERT INTO post_queue (id, post_target_id, scheduled_at, status, attempts, max_attempts, created_at)
-        VALUES (gen_random_uuid(), ${targetId}, ${queueScheduledAt}, 'pending', 0, 3, NOW())
       `
     }
 
+    // Add to queue
+    const queueScheduledAt = finalScheduledAt || new Date().toISOString()
+    await sql`
+      INSERT INTO post_queue (id, post_id, scheduled_at, status, attempts, max_attempts, created_at)
+      VALUES (gen_random_uuid(), ${postId}, ${queueScheduledAt}, 'pending', 0, 3, NOW())
+    `
+
     // If publishing now, trigger the queue processor
     if (scheduleType === "now") {
-      // Fire-and-forget — the queue will process immediately
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/queue/process`, {
+      fetch(`${process.env.BETTER_AUTH_URL || "http://localhost:3000"}/api/queue/process`, {
         method: "POST",
         headers: { "x-queue-secret": process.env.QUEUE_SECRET || "" },
       }).catch(() => {})
@@ -106,11 +103,11 @@ export async function GET(request: NextRequest) {
         COUNT(DISTINCT pm.id)::int as media_count
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
-      JOIN "member" m ON m."organizationId" = o.id
+      JOIN "member" m ON m.organization_id = o.id
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
-      WHERE m."userId" = ${session.user.id}
+      WHERE m.user_id = ${session.user.id}
         AND p.workspace_id = ${workspaceId}
         AND p.scheduled_at >= ${startDate}
         AND p.scheduled_at < ${endDate}
@@ -126,11 +123,11 @@ export async function GET(request: NextRequest) {
         COUNT(DISTINCT pm.id)::int as media_count
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
-      JOIN "member" m ON m."organizationId" = o.id
+      JOIN "member" m ON m.organization_id = o.id
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
-      WHERE m."userId" = ${session.user.id}
+      WHERE m.user_id = ${session.user.id}
         AND p.workspace_id = ${workspaceId}
       GROUP BY p.id, o.id, o.name
       ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
@@ -147,11 +144,11 @@ export async function GET(request: NextRequest) {
         COUNT(DISTINCT pm.id)::int as media_count
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
-      JOIN "member" m ON m."organizationId" = o.id
+      JOIN "member" m ON m.organization_id = o.id
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
-      WHERE m."userId" = ${session.user.id}
+      WHERE m.user_id = ${session.user.id}
         AND p.scheduled_at >= ${startDate}
         AND p.scheduled_at < ${endDate}
       GROUP BY p.id, o.id, o.name
@@ -166,11 +163,11 @@ export async function GET(request: NextRequest) {
         COUNT(DISTINCT pm.id)::int as media_count
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
-      JOIN "member" m ON m."organizationId" = o.id
+      JOIN "member" m ON m.organization_id = o.id
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
-      WHERE m."userId" = ${session.user.id}
+      WHERE m.user_id = ${session.user.id}
       GROUP BY p.id, o.id, o.name
       ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
     `
