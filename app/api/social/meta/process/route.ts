@@ -56,20 +56,23 @@ export async function POST(request: NextRequest) {
 
     // Step 3: Fetch pages with instagram info
     const pagesRes = await fetch(
-      `${GRAPH_API}/me/accounts?access_token=${userToken}&fields=id,name,access_token,picture,instagram_business_account{id,name,username,profile_picture_url}`
+      `${GRAPH_API}/me/accounts?access_token=${userToken}&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
     )
     const pagesData = await pagesRes.json()
 
     if (pagesData.error) {
       return NextResponse.json(
-        { error: `Erro ao buscar páginas: ${pagesData.error.message}` },
+        { error: `Erro ao buscar páginas: ${pagesData.error.message} [${pagesData.error.code}] tipo: ${pagesData.error.type}` },
         { status: 400 }
       )
     }
 
     if (!pagesData.data || pagesData.data.length === 0) {
+      // Try fetching without fields to see raw response
+      const rawRes = await fetch(`${GRAPH_API}/me/accounts?access_token=${userToken}`)
+      const rawData = await rawRes.json()
       return NextResponse.json(
-        { error: "Nenhuma Página do Facebook encontrada. Verifique se você tem páginas na sua conta." },
+        { error: `Nenhuma Página encontrada. Resposta bruta da API: ${JSON.stringify(rawData)}` },
         { status: 400 }
       )
     }
@@ -88,7 +91,7 @@ export async function POST(request: NextRequest) {
         VALUES (
           ${workspaceId}, 'facebook', ${page.name},
           ${page.id}, ${page.id}, ${pageToken},
-          ${page.picture?.data?.url ?? null}, true, NOW(), NOW(), NOW()
+          ${page.picture?.url ?? null}, true, NOW(), NOW(), NOW()
         )
         ON CONFLICT (platform, account_id) DO UPDATE SET
           access_token = EXCLUDED.access_token,
