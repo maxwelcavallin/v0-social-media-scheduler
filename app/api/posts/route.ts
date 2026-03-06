@@ -92,36 +92,89 @@ export async function GET(request: NextRequest) {
   const workspaceId = searchParams.get("workspaceId")
   const month = searchParams.get("month") // YYYY-MM format
 
-  let whereClause = sql`WHERE m."userId" = ${session.user.id}`
-  if (workspaceId) {
-    whereClause = sql`WHERE m."userId" = ${session.user.id} AND p.workspace_id = ${workspaceId}`
-  }
+  let posts
 
-  let dateFilter = sql``
-  if (month) {
+  if (workspaceId && month) {
     const [year, monthNum] = month.split("-")
     const startDate = `${year}-${monthNum}-01`
     const endDate = new Date(parseInt(year), parseInt(monthNum), 1).toISOString().split("T")[0]
-    dateFilter = sql`AND p.scheduled_at >= ${startDate} AND p.scheduled_at < ${endDate}`
+    posts = await sql`
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
+        o.id as workspace_id, o.name as workspace_name,
+        ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
+        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        COUNT(DISTINCT pm.id)::int as media_count
+      FROM posts p
+      JOIN "organization" o ON o.id = p.workspace_id
+      JOIN "member" m ON m."organizationId" = o.id
+      LEFT JOIN post_targets pt ON pt.post_id = p.id
+      LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
+      LEFT JOIN post_media pm ON pm.post_id = p.id
+      WHERE m."userId" = ${session.user.id}
+        AND p.workspace_id = ${workspaceId}
+        AND p.scheduled_at >= ${startDate}
+        AND p.scheduled_at < ${endDate}
+      GROUP BY p.id, o.id, o.name
+      ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
+    `
+  } else if (workspaceId) {
+    posts = await sql`
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
+        o.id as workspace_id, o.name as workspace_name,
+        ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
+        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        COUNT(DISTINCT pm.id)::int as media_count
+      FROM posts p
+      JOIN "organization" o ON o.id = p.workspace_id
+      JOIN "member" m ON m."organizationId" = o.id
+      LEFT JOIN post_targets pt ON pt.post_id = p.id
+      LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
+      LEFT JOIN post_media pm ON pm.post_id = p.id
+      WHERE m."userId" = ${session.user.id}
+        AND p.workspace_id = ${workspaceId}
+      GROUP BY p.id, o.id, o.name
+      ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
+    `
+  } else if (month) {
+    const [year, monthNum] = month.split("-")
+    const startDate = `${year}-${monthNum}-01`
+    const endDate = new Date(parseInt(year), parseInt(monthNum), 1).toISOString().split("T")[0]
+    posts = await sql`
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
+        o.id as workspace_id, o.name as workspace_name,
+        ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
+        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        COUNT(DISTINCT pm.id)::int as media_count
+      FROM posts p
+      JOIN "organization" o ON o.id = p.workspace_id
+      JOIN "member" m ON m."organizationId" = o.id
+      LEFT JOIN post_targets pt ON pt.post_id = p.id
+      LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
+      LEFT JOIN post_media pm ON pm.post_id = p.id
+      WHERE m."userId" = ${session.user.id}
+        AND p.scheduled_at >= ${startDate}
+        AND p.scheduled_at < ${endDate}
+      GROUP BY p.id, o.id, o.name
+      ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
+    `
+  } else {
+    posts = await sql`
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
+        o.id as workspace_id, o.name as workspace_name,
+        ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
+        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        COUNT(DISTINCT pm.id)::int as media_count
+      FROM posts p
+      JOIN "organization" o ON o.id = p.workspace_id
+      JOIN "member" m ON m."organizationId" = o.id
+      LEFT JOIN post_targets pt ON pt.post_id = p.id
+      LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
+      LEFT JOIN post_media pm ON pm.post_id = p.id
+      WHERE m."userId" = ${session.user.id}
+      GROUP BY p.id, o.id, o.name
+      ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
+    `
   }
-
-  const posts = await sql`
-    SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
-      o.id as workspace_id, o.name as workspace_name,
-      ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
-      ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
-      COUNT(DISTINCT pm.id)::int as media_count
-    FROM posts p
-    JOIN "organization" o ON o.id = p.workspace_id
-    JOIN "member" m ON m."organizationId" = o.id
-    LEFT JOIN post_targets pt ON pt.post_id = p.id
-    LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
-    LEFT JOIN post_media pm ON pm.post_id = p.id
-    ${whereClause}
-    ${dateFilter}
-    GROUP BY p.id, o.id, o.name
-    ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
-  `
 
   return NextResponse.json(posts)
 }
