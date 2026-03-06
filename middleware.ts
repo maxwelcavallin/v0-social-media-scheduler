@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
+import { COOKIE_NAME } from "@/lib/auth"
 
 const protectedPaths = ["/dashboard", "/workspace"]
 const authPaths = ["/login", "/register"]
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const sessionCookie =
-    request.cookies.get("better-auth.session_token") ||
-    request.cookies.get("__Secure-better-auth.session_token")
+  const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
 
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
   const isAuthPath = authPaths.some((p) => pathname.startsWith(p))

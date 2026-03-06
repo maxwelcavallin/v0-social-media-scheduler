@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { signIn } from "@/lib/auth-client"
+import { signInEmail } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,25 +33,19 @@ export default function LoginPage() {
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     setError(null)
-
-    const result = await signIn.email({
-      email: data.email,
-      password: data.password,
-      callbackURL: "/dashboard",
-    })
-
+    const result = await signInEmail(data.email, data.password)
     if (result.error) {
-      setError("E-mail ou senha incorretos. Tente novamente.")
+      setError(result.error.message)
       setLoading(false)
     } else {
       router.push("/dashboard")
+      router.refresh()
     }
   }
 
   return (
     <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4 font-sans">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
             <Zap className="w-5 h-5 text-primary-foreground" />
@@ -74,47 +68,24 @@ export default function LoginPage() {
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="voce@empresa.com"
-                  {...register("email")}
-                />
-                {errors.email && (
-                  <span className="text-xs text-destructive">{errors.email.message}</span>
-                )}
+                <Input id="email" type="email" placeholder="voce@empresa.com" {...register("email")} />
+                {errors.email && <span className="text-xs text-destructive">{errors.email.message}</span>}
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="password">Senha</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  {...register("password")}
-                />
-                {errors.password && (
-                  <span className="text-xs text-destructive">{errors.password.message}</span>
-                )}
+                <Input id="password" type="password" placeholder="••••••••" {...register("password")} />
+                {errors.password && <span className="text-xs text-destructive">{errors.password.message}</span>}
               </div>
 
               <Button type="submit" className="w-full mt-2" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    Entrando...
-                  </>
-                ) : (
-                  "Entrar"
-                )}
+                {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Entrando...</> : "Entrar"}
               </Button>
             </form>
 
             <p className="text-center text-sm text-muted-foreground mt-4">
               Não tem conta?{" "}
-              <Link href="/register" className="text-primary hover:underline font-medium">
-                Criar conta grátis
-              </Link>
+              <Link href="/register" className="text-primary hover:underline font-medium">Criar conta grátis</Link>
             </p>
           </CardContent>
         </Card>

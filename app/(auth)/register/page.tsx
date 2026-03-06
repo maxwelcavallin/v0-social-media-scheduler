@@ -6,7 +6,7 @@ import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { signUp } from "@/lib/auth-client"
+import { signUpEmail } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -38,32 +38,19 @@ export default function RegisterPage() {
   const onSubmit = async (data: FormData) => {
     setLoading(true)
     setError(null)
-
-    try {
-      const result = await signUp.email({
-        email: data.email,
-        password: data.password,
-        name: data.name,
-        callbackURL: "/dashboard",
-      })
-
-      if (result.error) {
-        const msg = result.error.message || "Erro ao criar conta."
-        setError(msg.includes("already") ? "Este e-mail já está cadastrado." : msg)
-        setLoading(false)
-      } else {
-        router.push("/dashboard")
-      }
-    } catch (err: unknown) {
-      setError("Erro ao criar conta. Tente novamente.")
+    const result = await signUpEmail(data.name, data.email, data.password)
+    if (result.error) {
+      setError(result.error.message)
       setLoading(false)
+    } else {
+      router.push("/dashboard")
+      router.refresh()
     }
   }
 
   return (
     <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4 font-sans">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
             <Zap className="w-5 h-5 text-primary-foreground" />
@@ -86,73 +73,36 @@ export default function RegisterPage() {
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="name">Nome completo</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="João Silva"
-                  {...register("name")}
-                />
-                {errors.name && (
-                  <span className="text-xs text-destructive">{errors.name.message}</span>
-                )}
+                <Input id="name" type="text" placeholder="João Silva" {...register("name")} />
+                {errors.name && <span className="text-xs text-destructive">{errors.name.message}</span>}
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="voce@empresa.com"
-                  {...register("email")}
-                />
-                {errors.email && (
-                  <span className="text-xs text-destructive">{errors.email.message}</span>
-                )}
+                <Input id="email" type="email" placeholder="voce@empresa.com" {...register("email")} />
+                {errors.email && <span className="text-xs text-destructive">{errors.email.message}</span>}
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="password">Senha</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  {...register("password")}
-                />
-                {errors.password && (
-                  <span className="text-xs text-destructive">{errors.password.message}</span>
-                )}
+                <Input id="password" type="password" placeholder="••••••••" {...register("password")} />
+                {errors.password && <span className="text-xs text-destructive">{errors.password.message}</span>}
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="confirmPassword">Confirmar senha</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="••••••••"
-                  {...register("confirmPassword")}
-                />
-                {errors.confirmPassword && (
-                  <span className="text-xs text-destructive">{errors.confirmPassword.message}</span>
-                )}
+                <Input id="confirmPassword" type="password" placeholder="••••••••" {...register("confirmPassword")} />
+                {errors.confirmPassword && <span className="text-xs text-destructive">{errors.confirmPassword.message}</span>}
               </div>
 
               <Button type="submit" className="w-full mt-2" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    Criando conta...
-                  </>
-                ) : (
-                  "Criar conta"
-                )}
+                {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Criando conta...</> : "Criar conta"}
               </Button>
             </form>
 
             <p className="text-center text-sm text-muted-foreground mt-4">
               Já tem conta?{" "}
-              <Link href="/login" className="text-primary hover:underline font-medium">
-                Entrar
-              </Link>
+              <Link href="/login" className="text-primary hover:underline font-medium">Entrar</Link>
             </p>
           </CardContent>
         </Card>

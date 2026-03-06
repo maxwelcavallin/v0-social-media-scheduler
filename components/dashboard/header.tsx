@@ -17,6 +17,7 @@ interface User {
   id: string
   name: string
   email: string
+  plan?: string
   image?: string | null
 }
 
