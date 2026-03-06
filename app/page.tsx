@@ -22,7 +22,7 @@ export default function HomePage() {
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Zap className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-lg text-foreground">PostFlow</span>
+            <span className="font-semibold text-lg text-foreground">SocialDog</span>
           </div>
           <nav className="hidden md:flex items-center gap-6">
             <Link href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -97,7 +97,7 @@ export default function HomePage() {
               Tudo que uma agência de marketing precisa
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto text-pretty">
-              Do agendamento ao relatório, o PostFlow centraliza a gestão de todas as suas contas sociais.
+              Do agendamento ao relatório, o SocialDog centraliza a gestão de todas as suas contas sociais.
             </p>
           </div>
 
@@ -169,10 +169,18 @@ export default function HomePage() {
             <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
               <Zap className="w-3 h-3 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-sm text-foreground">PostFlow</span>
+            <span className="font-semibold text-sm text-foreground">SocialDog</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy-policy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Política de Privacidade
+            </Link>
+            <Link href="/data-deletion" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Exclusão de Dados
+            </Link>
           </div>
           <p className="text-sm text-muted-foreground">
-            © 2026 PostFlow. Todos os direitos reservados.
+            © 2026 SocialDog. Todos os direitos reservados.
           </p>
         </div>
       </footer>

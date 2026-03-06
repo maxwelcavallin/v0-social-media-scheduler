@@ -74,7 +74,7 @@ export default async function AccountsPage({ params }: Props) {
             <div>
               <p className="text-sm font-medium text-foreground">Como funciona a conexão</p>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Faça login uma vez com o Facebook e o PostFlow identificará automaticamente todas as suas Páginas e contas do Instagram Business vinculadas ao Meta Business Suite. Nenhuma senha adicional é necessária.
+                Faça login uma vez com o Facebook e o SocialDog identificará automaticamente todas as suas Páginas e contas do Instagram Business vinculadas ao Meta Business Suite. Nenhuma senha adicional é necessária.
               </p>
             </div>
           </div>

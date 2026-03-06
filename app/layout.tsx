@@ -8,7 +8,7 @@ const _inter = Inter({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'PostFlow — Agendamento de Redes Sociais',
+  title: 'SocialDog — Agendamento de Redes Sociais',
   description: 'Plataforma de agendamento de posts para Instagram e Facebook. Gerencie múltiplos clientes e workspaces.',
   generator: 'v0.app',
   icons: {

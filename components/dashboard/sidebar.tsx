@@ -88,7 +88,7 @@ export function DashboardSidebar({ workspaces, user }: Props) {
             <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-base text-sidebar-foreground">PostFlow</span>
+            <span className="font-bold text-base text-sidebar-foreground">SocialDog</span>
           </Link>
         </div>
 
