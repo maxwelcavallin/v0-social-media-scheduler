@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   // Check slug uniqueness
   const existing = await sql`
-    SELECT id FROM neon_auth.organization WHERE slug = ${slug}
+    SELECT id FROM "organization" WHERE slug = ${slug}
   `
   if (existing.length > 0) {
     return NextResponse.json({ error: "Este identificador já está em uso. Escolha outro." }, { status: 409 })
@@ -24,16 +24,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const org = await sql`
-      INSERT INTO neon_auth.organization (id, name, slug, "createdAt")
-      VALUES (gen_random_uuid(), ${name}, ${slug}, NOW())
+      INSERT INTO "organization" (id, name, slug, "createdAt")
+      VALUES (gen_random_uuid()::text, ${name}, ${slug}, NOW())
       RETURNING id, name, slug
     `
     const orgId = org[0].id
 
     // Add user as owner
     await sql`
-      INSERT INTO neon_auth.member (id, "organizationId", "userId", role, "createdAt")
-      VALUES (gen_random_uuid(), ${orgId}, ${session.user.id}, 'owner', NOW())
+      INSERT INTO "member" (id, "organizationId", "userId", role, "createdAt")
+      VALUES (gen_random_uuid()::text, ${orgId}, ${session.user.id}, 'owner', NOW())
     `
 
     return NextResponse.json(org[0])

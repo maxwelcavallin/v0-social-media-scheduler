@@ -31,8 +31,8 @@ export default async function WorkspacePage({ params }: Props) {
   const [workspace, accounts, recentPosts, stats] = await Promise.all([
     sql`
       SELECT o.id, o.name, o.slug
-      FROM neon_auth.organization o
-      JOIN neon_auth.member m ON o.id = m."organizationId"
+      FROM "organization" o
+      JOIN "member" m ON o.id = m."organizationId"
       WHERE o.id = ${workspaceId} AND m."userId" = ${session.user.id}
       LIMIT 1
     `,

@@ -15,8 +15,8 @@ export default async function DashboardCalendarPage() {
       COUNT(DISTINCT pm.id)::int as media_count,
       (SELECT pm2.media_url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
     FROM posts p
-    JOIN neon_auth.organization o ON o.id = p.workspace_id
-    JOIN neon_auth.member m ON m."organizationId" = o.id
+    JOIN "organization" o ON o.id = p.workspace_id
+    JOIN "member" m ON m."organizationId" = o.id
     LEFT JOIN post_targets pt ON pt.post_id = p.id
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id

@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
   // Verify workspace access
   const membership = await sql`
-    SELECT id FROM neon_auth.member
+    SELECT id FROM "member"
     WHERE "organizationId" = ${workspaceId} AND "userId" = ${session.user.id}
     LIMIT 1
   `
@@ -112,8 +112,8 @@ export async function GET(request: NextRequest) {
       ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
       COUNT(DISTINCT pm.id)::int as media_count
     FROM posts p
-    JOIN neon_auth.organization o ON o.id = p.workspace_id
-    JOIN neon_auth.member m ON m."organizationId" = o.id
+    JOIN "organization" o ON o.id = p.workspace_id
+    JOIN "member" m ON m."organizationId" = o.id
     LEFT JOIN post_targets pt ON pt.post_id = p.id
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id

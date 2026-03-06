@@ -18,8 +18,8 @@ export default async function DashboardPage() {
       SELECT o.id, o.name, o.slug, o.logo, o."createdAt",
         COUNT(DISTINCT sa.id)::int as accounts_count,
         COUNT(DISTINCT p.id)::int as posts_count
-      FROM neon_auth.organization o
-      JOIN neon_auth.member m ON o.id = m."organizationId"
+      FROM "organization" o
+      JOIN "member" m ON o.id = m."organizationId"
       LEFT JOIN social_accounts sa ON sa.workspace_id = o.id AND sa.is_active = true
       LEFT JOIN posts p ON p.workspace_id = o.id
       WHERE m."userId" = ${session.user.id}
@@ -31,8 +31,8 @@ export default async function DashboardPage() {
         o.name as workspace_name,
         COUNT(DISTINCT pt.id)::int as platforms_count
       FROM posts p
-      JOIN neon_auth.organization o ON o.id = p.workspace_id
-      JOIN neon_auth.member m ON o.id = m."organizationId"
+      JOIN "organization" o ON o.id = p.workspace_id
+      JOIN "member" m ON o.id = m."organizationId"
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       WHERE m."userId" = ${session.user.id}
       GROUP BY p.id, p.content, p.status, p.scheduled_at, p.created_at, o.name
@@ -44,8 +44,8 @@ export default async function DashboardPage() {
         COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'scheduled')::int as scheduled,
         COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'published')::int as published,
         COUNT(DISTINCT sa.id)::int as connected_accounts
-      FROM neon_auth.organization o
-      JOIN neon_auth.member m ON o.id = m."organizationId"
+      FROM "organization" o
+      JOIN "member" m ON o.id = m."organizationId"
       LEFT JOIN posts p ON p.workspace_id = o.id
       LEFT JOIN social_accounts sa ON sa.workspace_id = o.id AND sa.is_active = true
       WHERE m."userId" = ${session.user.id}

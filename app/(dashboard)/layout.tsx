@@ -18,8 +18,8 @@ export default async function DashboardLayout({
   // Fetch user's workspaces
   const workspaces = await sql`
     SELECT o.id, o.name, o.slug, o.logo
-    FROM neon_auth.organization o
-    JOIN neon_auth.member m ON o.id = m."organizationId"
+    FROM "organization" o
+    JOIN "member" m ON o.id = m."organizationId"
     WHERE m."userId" = ${session.user.id}
     ORDER BY o."createdAt" ASC
   `
