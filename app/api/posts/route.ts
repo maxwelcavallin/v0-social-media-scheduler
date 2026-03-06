@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
 
           await sql`
             UPDATE post_targets
-            SET status = 'published', published_at = NOW(), platform_post_id = ${platformPostId}
+            SET status = 'published', platform_post_id = ${platformPostId}
             WHERE id = ${target.targetId}
           `
         } catch (err: any) {

@@ -67,7 +67,7 @@ async function processQueue() {
 
       await sql`UPDATE post_queue SET status = 'published' WHERE id = ${item.queue_id}`
       await sql`
-        UPDATE post_targets SET status = 'published', published_at = NOW(),
+        UPDATE post_targets SET status = 'published',
           platform_post_id = ${platformPostId} WHERE id = ${item.target_id}
       `
 
