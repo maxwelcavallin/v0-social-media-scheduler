@@ -1,5 +1,4 @@
 import { betterAuth } from "better-auth"
-import { organization } from "better-auth/plugins"
 import { Pool } from "pg"
 
 const pool = new Pool({
@@ -14,12 +13,6 @@ export const auth = betterAuth({
     db: pool,
     type: "pg",
   },
-  plugins: [
-    organization({
-      allowUserToCreateOrganization: true,
-      creatorRole: "owner",
-    }),
-  ],
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,

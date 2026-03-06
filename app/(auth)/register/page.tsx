@@ -40,25 +40,21 @@ export default function RegisterPage() {
     setError(null)
 
     try {
-      console.log("[v0] signUp attempt:", data.email)
       const result = await signUp.email({
         email: data.email,
         password: data.password,
         name: data.name,
         callbackURL: "/dashboard",
       })
-      console.log("[v0] signUp result:", JSON.stringify(result))
 
       if (result.error) {
         const msg = result.error.message || "Erro ao criar conta."
-        console.log("[v0] signUp error:", msg)
         setError(msg.includes("already") ? "Este e-mail já está cadastrado." : msg)
         setLoading(false)
       } else {
         router.push("/dashboard")
       }
     } catch (err: unknown) {
-      console.log("[v0] signUp exception:", err instanceof Error ? err.message : String(err))
       setError("Erro ao criar conta. Tente novamente.")
       setLoading(false)
     }
