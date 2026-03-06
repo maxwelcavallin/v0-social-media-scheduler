@@ -65,7 +65,6 @@ export async function PATCH(
     UPDATE posts
     SET content = ${content || ""},
         scheduled_at = ${finalScheduledAt},
-        post_type = ${postType || "feed"},
         updated_at = NOW()
     WHERE id = ${postId}
   `
