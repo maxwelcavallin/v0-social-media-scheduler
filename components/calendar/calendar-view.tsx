@@ -44,6 +44,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { PostActions } from "@/components/posts/post-actions"
 import { cn } from "@/lib/utils"
 
 interface Post {
@@ -252,49 +253,53 @@ export function CalendarView({ posts, showWorkspace }: Props) {
                 </div>
 
                 {/* Meta */}
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      {(post.platforms || []).map((p) => (
-                        <span key={p} className="flex items-center">{platformIcons[p]}</span>
-                      ))}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1">
+                        {(post.platforms || []).map((p) => (
+                          <span key={p} className="flex items-center">{platformIcons[p]}</span>
+                        ))}
+                      </div>
+                      {post.media_count ? (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <ImageIcon className="w-3 h-3" />
+                          {post.media_count}
+                        </span>
+                      ) : null}
+                      {showWorkspace && post.workspace_name && (
+                        <Badge variant="outline" className="text-xs">{post.workspace_name}</Badge>
+                      )}
                     </div>
-                    {post.media_count ? (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <ImageIcon className="w-3 h-3" />
-                        {post.media_count}
-                      </span>
-                    ) : null}
-                    {showWorkspace && post.workspace_name && (
-                      <Badge variant="outline" className="text-xs">{post.workspace_name}</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {post.scheduled_at && (
-                      <span className="text-xs text-muted-foreground">
-                        {formatTimeBrasilia(post.scheduled_at)}
-                      </span>
-                    )}
-                    <Badge
-                      variant={
-                        post.status === "published"
-                          ? "default"
-                          : post.status === "failed"
-                          ? "destructive"
+                    <div className="flex items-center gap-1">
+                      {post.scheduled_at && (
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimeBrasilia(post.scheduled_at)}
+                        </span>
+                      )}
+                      <Badge
+                        variant={
+                          post.status === "published" ? "default"
+                          : post.status === "failed" ? "destructive"
                           : "secondary"
-                      }
-                      className="text-xs"
-                    >
-                      {post.status === "scheduled"
-                        ? "Agendado"
-                        : post.status === "published"
-                        ? "Publicado"
-                        : post.status === "failed"
-                        ? "Falhou"
-                        : "Rascunho"}
-                    </Badge>
+                        }
+                        className="text-xs"
+                      >
+                        {post.status === "scheduled" ? "Agendado"
+                          : post.status === "published" ? "Publicado"
+                          : post.status === "failed" ? "Falhou"
+                          : "Rascunho"}
+                      </Badge>
+                      <PostActions
+                        post={{
+                          id: post.id,
+                          content: post.content,
+                          status: post.status,
+                          scheduled_at: post.scheduled_at,
+                          post_type: (post.post_types || [])[0] || "feed",
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
               </div>
             ))}
           </div>

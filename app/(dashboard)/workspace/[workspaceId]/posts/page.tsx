@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
+import { PostActions } from "@/components/posts/post-actions"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -147,20 +148,29 @@ export default async function WorkspacePostsPage({ params }: Props) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                       {post.scheduled_at
-                        ? new Date(post.scheduled_at).toLocaleDateString("pt-BR", {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
+                        ? new Intl.DateTimeFormat("pt-BR", {
+                            timeZone: "America/Sao_Paulo",
+                            day: "2-digit", month: "short",
+                            hour: "2-digit", minute: "2-digit",
+                          }).format(new Date(post.scheduled_at))
                         : new Date(post.created_at).toLocaleDateString("pt-BR", {
-                            day: "2-digit",
-                            month: "short",
+                            day: "2-digit", month: "short",
                           })}
                     </span>
-                    <Badge variant={status.variant} className="text-xs">
-                      {status.label}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant={status.variant} className="text-xs">
+                        {status.label}
+                      </Badge>
+                      <PostActions
+                        post={{
+                          id: post.id,
+                          content: post.content,
+                          status: post.status,
+                          scheduled_at: post.scheduled_at,
+                          post_type: (post.post_types || [])[0] || "feed",
+                        }}
+                      />
+                    </div>
                   </div>
                 </CardContent>
               </Card>

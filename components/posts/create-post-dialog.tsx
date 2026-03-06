@@ -19,12 +19,10 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { AccountSelector } from "@/components/posts/account-selector"
 import {
-  Instagram,
-  Facebook,
   ImageIcon,
   Upload,
   X,
@@ -65,15 +63,6 @@ const postTypeOptions = [
   { value: "story", label: "Story" },
 ]
 
-const platformIcons: Record<string, React.ReactNode> = {
-  instagram: <Instagram className="w-4 h-4" style={{ color: "oklch(0.52 0.25 15)" }} />,
-  facebook: <Facebook className="w-4 h-4" style={{ color: "oklch(0.46 0.18 242)" }} />,
-}
-
-const platformColors: Record<string, string> = {
-  instagram: "border-[oklch(0.52_0.25_15)]",
-  facebook: "border-[oklch(0.46_0.18_242)]",
-}
 
 export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   const router = useRouter()
@@ -223,33 +212,12 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                   {/* Platform Selection */}
                   <div className="flex flex-col gap-2">
                     <Label>Publicar em</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {accounts.map((acc) => {
-                        const selected = accountIds.includes(acc.id)
-                        return (
-                          <button
-                            key={acc.id}
-                            type="button"
-                            onClick={() => toggleAccount(acc.id)}
-                            className={cn(
-                              "flex items-center gap-2 px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all",
-                              selected
-                                ? cn("bg-accent", platformColors[acc.platform] || "border-primary")
-                                : "border-border hover:border-muted-foreground/40"
-                            )}
-                          >
-                            {platformIcons[acc.platform]}
-                            <span className="text-foreground">{acc.account_name}</span>
-                            {selected && (
-                              <Badge variant="secondary" className="text-xs px-1 py-0">✓</Badge>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {errors.accountIds && (
-                      <span className="text-xs text-destructive">{errors.accountIds.message}</span>
-                    )}
+                    <AccountSelector
+                      accounts={accounts}
+                      selected={accountIds}
+                      onChange={(ids) => setValue("accountIds", ids)}
+                      error={errors.accountIds?.message}
+                    />
                   </div>
 
                   {/* Post Type */}
@@ -321,8 +289,8 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                     )}
                   </div>
 
-                  {/* Caption */}
-                  <div className="flex flex-col gap-2">
+                  {/* Caption — not shown for stories */}
+                  {postType !== "story" && <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <Label>Legenda</Label>
                       <span className={cn("text-xs", charCount > 2000 ? "text-destructive" : "text-muted-foreground")}>
@@ -339,7 +307,7 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                     {errors.content && (
                       <span className="text-xs text-destructive">{errors.content.message}</span>
                     )}
-                  </div>
+                  </div>}
 
                   {/* Schedule */}
                   <div className="flex flex-col gap-3">
