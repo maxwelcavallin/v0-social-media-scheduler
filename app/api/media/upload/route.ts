@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
   const ext = file.name.split(".").pop()?.toLowerCase() || (isVideo ? "mp4" : "jpg")
   const filename = `posts/${session.user.id}/${Date.now()}.${ext}`
 
-  // Stream directly to Vercel Blob — avoids buffering entire file in memory
-  const blob = await put(filename, file.stream(), {
+  // Pass file directly to Vercel Blob (File extends Blob, fully supported)
+  const blob = await put(filename, file, {
     access: "public",
     contentType: file.type,
   })

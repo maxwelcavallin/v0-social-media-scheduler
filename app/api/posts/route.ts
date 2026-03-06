@@ -86,16 +86,18 @@ async function publishToInstagram(item: {
     const isReel = post_type === "reel"
     const isVideo = media_types?.[0] === "video" || isReel
 
+    // Determine media_type correctly for Instagram Graph API
     let mediaType: string
-    if (isStory) mediaType = "STORIES"
-    else if (isReel) mediaType = "REELS"
+    if (isReel) mediaType = "REELS"
+    else if (isStory) mediaType = "STORIES"
+    else if (isVideo) mediaType = "VIDEO"
     else mediaType = "IMAGE"
 
     const containerBody: Record<string, string | boolean> = {
       media_type: mediaType,
       access_token,
     }
-    if (isVideo || isReel) {
+    if (isVideo) {
       containerBody.video_url = media_urls[0]
     } else {
       containerBody.image_url = media_urls[0]
@@ -110,15 +112,28 @@ async function publishToInstagram(item: {
       body: JSON.stringify(containerBody),
     })
     const containerData = await containerRes.json()
-    if (containerData.error) throw new Error(`Container error: ${containerData.error.message} [${containerData.error.code}]`)
+    if (containerData.error) {
+      throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
+    }
 
-    // Wait for processing
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 2000))
-      const statusRes = await fetch(`${GRAPH_API}/${containerData.id}?fields=status_code&access_token=${access_token}`)
+    // Poll until ready — videos take longer than images
+    const maxPoll = isVideo ? 30 : 8
+    const pollInterval = isVideo ? 4000 : 1500
+    let lastStatusCode = ""
+    for (let i = 0; i < maxPoll; i++) {
+      await new Promise((r) => setTimeout(r, pollInterval))
+      const statusRes = await fetch(
+        `${GRAPH_API}/${containerData.id}?fields=status_code,status&access_token=${access_token}`
+      )
       const statusData = await statusRes.json()
-      if (statusData.status_code === "FINISHED") break
-      if (statusData.status_code === "ERROR") throw new Error("Falha ao processar mídia no Instagram")
+      lastStatusCode = statusData.status_code
+      if (lastStatusCode === "FINISHED") break
+      if (lastStatusCode === "ERROR") {
+        throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
+      }
+    }
+    if (lastStatusCode && lastStatusCode !== "FINISHED") {
+      throw new Error(`Tempo esgotado aguardando processamento (status: ${lastStatusCode})`)
     }
 
     const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
@@ -333,9 +348,12 @@ export async function POST(request: NextRequest) {
       `
       return NextResponse.json({ id: postId, status: "scheduled" })
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error("[posts] Error:", err)
-    return NextResponse.json({ error: "Erro ao criar post" }, { status: 500 })
+    return NextResponse.json(
+      { error: err?.message || "Erro inesperado ao criar post" },
+      { status: 500 }
+    )
   }
 }
 
