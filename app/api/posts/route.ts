@@ -86,16 +86,19 @@ async function publishToInstagram(item: {
     const isReel = post_type === "reel"
     const isVideo = media_types?.[0] === "video" || isReel
 
+    // Determine correct media_type for Instagram Graph API
     let mediaType: string
-    if (isStory) mediaType = "STORIES"
-    else if (isReel) mediaType = "REELS"
+    if (isReel) mediaType = "REELS"
+    else if (isStory && isVideo) mediaType = "STORIES"
+    else if (isStory) mediaType = "STORIES"
+    else if (isVideo) mediaType = "VIDEO"
     else mediaType = "IMAGE"
 
     const containerBody: Record<string, string | boolean> = {
       media_type: mediaType,
       access_token,
     }
-    if (isVideo || isReel) {
+    if (isVideo) {
       containerBody.video_url = media_urls[0]
     } else {
       containerBody.image_url = media_urls[0]
@@ -110,15 +113,28 @@ async function publishToInstagram(item: {
       body: JSON.stringify(containerBody),
     })
     const containerData = await containerRes.json()
-    if (containerData.error) throw new Error(`Container error: ${containerData.error.message} [${containerData.error.code}]`)
+    if (containerData.error) {
+      throw new Error(`Erro ao criar container de mídia: ${containerData.error.message} [código ${containerData.error.code}]`)
+    }
 
-    // Wait for processing
-    for (let i = 0; i < 15; i++) {
-      await new Promise((r) => setTimeout(r, 2000))
-      const statusRes = await fetch(`${GRAPH_API}/${containerData.id}?fields=status_code&access_token=${access_token}`)
+    // Poll for processing — videos take longer (up to 5 min), images are instant
+    const maxAttempts = isVideo ? 60 : 5
+    const interval = isVideo ? 5000 : 1000
+    let lastStatus = ""
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, interval))
+      const statusRes = await fetch(
+        `${GRAPH_API}/${containerData.id}?fields=status_code,status&access_token=${access_token}`
+      )
       const statusData = await statusRes.json()
+      lastStatus = statusData.status_code
       if (statusData.status_code === "FINISHED") break
-      if (statusData.status_code === "ERROR") throw new Error("Falha ao processar mídia no Instagram")
+      if (statusData.status_code === "ERROR") {
+        throw new Error(`Erro ao processar mídia no Instagram: ${statusData.status || "status desconhecido"}`)
+      }
+    }
+    if (lastStatus !== "FINISHED") {
+      throw new Error(`Tempo esgotado aguardando processamento da mídia (último status: ${lastStatus})`)
     }
 
     const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
@@ -127,20 +143,26 @@ async function publishToInstagram(item: {
       body: JSON.stringify({ creation_id: containerData.id, access_token }),
     })
     const publishData = await publishRes.json()
-    if (publishData.error) throw new Error(publishData.error.message)
+    if (publishData.error) throw new Error(`Erro ao publicar: ${publishData.error.message}`)
     return publishData.id
   }
 
   // Carousel
   const itemIds: string[] = []
-  for (const url of media_urls) {
+  for (let i = 0; i < media_urls.length; i++) {
+    const url = media_urls[i]
+    const isItemVideo = media_types?.[i] === "video"
     const r = await fetch(`${GRAPH_API}/${account_id}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token }),
+      body: JSON.stringify({
+        ...(isItemVideo ? { video_url: url, media_type: "VIDEO" } : { image_url: url }),
+        is_carousel_item: true,
+        access_token,
+      }),
     })
     const d = await r.json()
-    if (d.error) throw new Error(d.error.message)
+    if (d.error) throw new Error(`Erro no item ${i + 1} do carrossel: ${d.error.message}`)
     itemIds.push(d.id)
   }
   const carouselRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
