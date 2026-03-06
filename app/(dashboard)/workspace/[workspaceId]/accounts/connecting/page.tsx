@@ -17,7 +17,7 @@ export default function ConnectingPage() {
   const workspaceId = params.workspaceId as string
 
   const code = searchParams.get("code")
-  const origin = searchParams.get("origin")
+  const redirectUri = searchParams.get("redirectUri")
 
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing")
   const [message, setMessage] = useState("Conectando com o Facebook...")
@@ -25,13 +25,11 @@ export default function ConnectingPage() {
   const [errorDetail, setErrorDetail] = useState("")
 
   useEffect(() => {
-    if (!code || !workspaceId) {
+    if (!code || !workspaceId || !redirectUri) {
       setStatus("error")
       setMessage("Parâmetros inválidos.")
       return
     }
-
-    const redirectUri = `${origin || window.location.origin}/api/social/meta/callback`
 
     const process = async () => {
       try {
@@ -66,7 +64,7 @@ export default function ConnectingPage() {
     }
 
     process()
-  }, [code, workspaceId, origin, router])
+  }, [code, workspaceId, redirectUri, router])
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
