@@ -4,6 +4,41 @@ import sql from "@/lib/db"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
 
+// Insert or update a social account
+async function upsertAccount(fields: {
+  workspaceId: string
+  platform: string
+  accountName: string
+  accountUsername: string | null
+  accountId: string
+  pageId: string | null
+  accessToken: string
+  profilePictureUrl: string | null
+}) {
+  await sql`
+    INSERT INTO social_accounts (
+      workspace_id, platform, account_name, account_username, account_id, page_id,
+      access_token, profile_picture_url, is_active, created_at, updated_at, last_sync_at
+    )
+    VALUES (
+      ${fields.workspaceId}, ${fields.platform}, ${fields.accountName},
+      ${fields.accountUsername}, ${fields.accountId}, ${fields.pageId},
+      ${fields.accessToken}, ${fields.profilePictureUrl},
+      true, NOW(), NOW(), NOW()
+    )
+    ON CONFLICT (platform, account_id) DO UPDATE SET
+      access_token        = EXCLUDED.access_token,
+      account_name        = EXCLUDED.account_name,
+      account_username    = EXCLUDED.account_username,
+      profile_picture_url = EXCLUDED.profile_picture_url,
+      page_id             = EXCLUDED.page_id,
+      workspace_id        = EXCLUDED.workspace_id,
+      is_active           = true,
+      updated_at          = NOW(),
+      last_sync_at        = NOW()
+  `
+}
+
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) {
@@ -12,17 +47,14 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const { code, workspaceId } = body
-  let { redirectUri } = body
 
   if (!code || !workspaceId) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
-  // Build redirectUri from the real request host — ignores NEXT_PUBLIC_APP_URL
-  // which may be incorrectly set to localhost in env vars
   const host = request.headers.get("host") ?? ""
   const protocol = host.startsWith("localhost") ? "http" : "https"
-  redirectUri = `${protocol}://${host}/api/social/meta/callback`
+  const redirectUri = `${protocol}://${host}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET
@@ -40,104 +72,114 @@ export async function POST(request: NextRequest) {
 
     if (tokenData.error) {
       return NextResponse.json(
-        { error: `Erro ao trocar código (redirect_uri: ${redirectUri}): ${tokenData.error.message} [${tokenData.error.code}]` },
+        { error: `Erro ao trocar código: ${tokenData.error.message} [${tokenData.error.code}]` },
         { status: 400 }
       )
     }
 
     const shortToken = tokenData.access_token
 
-    // Step 2: Exchange for long-lived token (60 days)
-    const longLivedRes = await fetch(
+    // Step 2: Exchange for long-lived user token (60 days)
+    const longRes = await fetch(
       `${GRAPH_API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortToken}`
     )
-    const longLivedData = await longLivedRes.json()
-    const userToken = longLivedData.access_token || shortToken
+    const longData = await longRes.json()
+    const userToken = longData.access_token || shortToken
 
-    // Step 3: Fetch pages with instagram info
-    const pagesRes = await fetch(
-      `${GRAPH_API}/me/accounts?access_token=${userToken}&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+    // Step 3: Try /me/accounts first (pages linked to personal profile)
+    const pages: any[] = []
+
+    const accountsRes = await fetch(
+      `${GRAPH_API}/me/accounts?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
     )
-    const pagesData = await pagesRes.json()
+    const accountsData = await accountsRes.json()
 
-    if (pagesData.error) {
-      return NextResponse.json(
-        { error: `Erro ao buscar páginas: ${pagesData.error.message} [${pagesData.error.code}] tipo: ${pagesData.error.type}` },
-        { status: 400 }
-      )
+    if (accountsData.data && accountsData.data.length > 0) {
+      pages.push(...accountsData.data)
     }
 
-    if (!pagesData.data || pagesData.data.length === 0) {
-      // Try fetching without fields to see raw response
-      const rawRes = await fetch(`${GRAPH_API}/me/accounts?access_token=${userToken}`)
-      const rawData = await rawRes.json()
-      return NextResponse.json(
-        { error: `Nenhuma Página encontrada. Resposta bruta da API: ${JSON.stringify(rawData)}` },
-        { status: 400 }
+    // Step 4: If still empty, try Business Manager pages
+    if (pages.length === 0) {
+      const bizRes = await fetch(
+        `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
       )
+      const bizData = await bizRes.json()
+
+      if (bizData.data && bizData.data.length > 0) {
+        for (const biz of bizData.data) {
+          if (biz.owned_pages?.data?.length > 0) {
+            // For Business Manager pages, get a page token via token exchange
+            for (const p of biz.owned_pages.data) {
+              // Get a proper page access token
+              const pageTokenRes = await fetch(
+                `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
+              )
+              const pageTokenData = await pageTokenRes.json()
+              pages.push({
+                ...p,
+                access_token: pageTokenData.access_token || userToken,
+              })
+            }
+          }
+        }
+      }
     }
 
+    // Step 5: If still empty, show debug info
+    if (pages.length === 0) {
+      const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
+      const meData = await meRes.json()
+      const permRes = await fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
+      const permData = await permRes.json()
+      const grantedPerms = permData.data
+        ?.filter((p: any) => p.status === "granted")
+        .map((p: any) => p.permission)
+        .join(", ")
+
+      return NextResponse.json({
+        error: `Nenhuma Página encontrada. Usuário: ${meData.name} (${meData.id}). Permissões concedidas: ${grantedPerms || "nenhuma"}. Se suas páginas estão no Business Manager, certifique-se de que o app tem acesso à sua Business.`,
+      }, { status: 400 })
+    }
+
+    // Step 6: Save pages and linked Instagram accounts
     const saved: { platform: string; name: string }[] = []
 
-    for (const page of pagesData.data) {
-      const pageToken = page.access_token
+    for (const page of pages) {
+      const pageToken = page.access_token || userToken
 
-      // Save Facebook Page
-      await sql`
-        INSERT INTO social_accounts (
-          workspace_id, platform, account_name, account_id, page_id,
-          access_token, profile_picture_url, is_active, created_at, updated_at, last_sync_at
-        )
-        VALUES (
-          ${workspaceId}, 'facebook', ${page.name},
-          ${page.id}, ${page.id}, ${pageToken},
-          ${page.picture?.url ?? null}, true, NOW(), NOW(), NOW()
-        )
-        ON CONFLICT (platform, account_id) DO UPDATE SET
-          access_token = EXCLUDED.access_token,
-          account_name = EXCLUDED.account_name,
-          workspace_id = EXCLUDED.workspace_id,
-          profile_picture_url = EXCLUDED.profile_picture_url,
-          is_active = true,
-          updated_at = NOW(),
-          last_sync_at = NOW()
-      `
+      await upsertAccount({
+        workspaceId,
+        platform: "facebook",
+        accountName: page.name,
+        accountUsername: null,
+        accountId: page.id,
+        pageId: page.id,
+        accessToken: pageToken,
+        profilePictureUrl: page.picture?.url ?? null,
+      })
       saved.push({ platform: "facebook", name: page.name })
 
-      // Save Instagram if connected
+      // Save linked Instagram Business Account
       if (page.instagram_business_account) {
-        const igAccount = page.instagram_business_account
-
-        const igDetailsRes = await fetch(
-          `${GRAPH_API}/${igAccount.id}?fields=id,name,username,profile_picture_url&access_token=${pageToken}`
+        const ig = page.instagram_business_account
+        // Fetch full IG profile details
+        const igRes = await fetch(
+          `${GRAPH_API}/${ig.id}?fields=id,name,username,profile_picture_url&access_token=${pageToken}`
         )
-        const igDetails = await igDetailsRes.json()
+        const igData = await igRes.json()
 
-        if (!igDetails.error) {
-          await sql`
-            INSERT INTO social_accounts (
-              workspace_id, platform, account_name, account_username, account_id, page_id,
-              access_token, profile_picture_url, is_active, created_at, updated_at, last_sync_at
-            )
-            VALUES (
-              ${workspaceId}, 'instagram',
-              ${igDetails.name || igDetails.username || "Instagram"},
-              ${igDetails.username ?? null},
-              ${igDetails.id}, ${page.id}, ${pageToken},
-              ${igDetails.profile_picture_url ?? null}, true, NOW(), NOW(), NOW()
-            )
-            ON CONFLICT (platform, account_id) DO UPDATE SET
-              access_token = EXCLUDED.access_token,
-              account_name = EXCLUDED.account_name,
-              account_username = EXCLUDED.account_username,
-              profile_picture_url = EXCLUDED.profile_picture_url,
-              page_id = EXCLUDED.page_id,
-              workspace_id = EXCLUDED.workspace_id,
-              is_active = true,
-              updated_at = NOW(),
-              last_sync_at = NOW()
-          `
-          saved.push({ platform: "instagram", name: igDetails.username || igDetails.name })
+        if (!igData.error) {
+          await upsertAccount({
+            workspaceId,
+            platform: "instagram",
+            accountName: igData.name || igData.username || "Instagram",
+            accountUsername: igData.username ?? null,
+            accountId: igData.id,
+            pageId: page.id,
+            accessToken: pageToken,
+            profilePictureUrl: igData.profile_picture_url ?? null,
+          })
+          saved.push({ platform: "instagram", name: igData.username || igData.name })
         }
       }
     }
