@@ -80,14 +80,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── Step 2: Fetch profile using ig_user_id returned in Step 1 ────────────
-    // The Instagram Business Login token cannot be used with graph.facebook.com/me (error 190).
-    // The correct endpoint is graph.facebook.com/{ig_user_id} using the user_id from Step 1.
+    // ── Step 2: Fetch profile via graph.instagram.com/{user_id} ─────────────
+    // Token from api.instagram.com is Instagram-specific (IGAAN...).
+    // - graph.facebook.com rejects it (error 190 — cannot parse token)
+    // - graph.instagram.com/me rejects it (error 100 — method type get not supported for /me)
+    // - Correct endpoint: graph.instagram.com/{user_id}?fields=...&access_token=...
     const accessToken = shortToken
 
-    console.log("[instagram/process] Step 2 — buscando perfil em graph.facebook.com/{ig_user_id}")
+    console.log("[instagram/process] Step 2 — buscando perfil em graph.instagram.com/{user_id}")
     const meRes = await fetch(
-      `${GRAPH}/${igUserId}?fields=id,name,username,profile_picture_url&access_token=${accessToken}`
+      `${IG_GRAPH}/${igUserId}?fields=id,name,username,profile_picture_url&access_token=${accessToken}`
     )
     const meData = await meRes.json()
     console.log("[instagram/process] Step 2 status:", meRes.status)
