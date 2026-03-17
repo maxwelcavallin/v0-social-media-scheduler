@@ -97,7 +97,33 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, show debug info
+    // Step 4: If still empty, try Business Manager (owned_pages + client_pages)
+    if (pages.length === 0) {
+      const bizRes = await fetch(
+        `${GRAPH_API}/me/businesses?access_token=${userToken}&limit=10&fields=id,name`
+      )
+      const bizData = await bizRes.json()
+
+      if (bizData.data && bizData.data.length > 0) {
+        for (const biz of bizData.data) {
+          // Owned pages
+          const ownedRes = await fetch(
+            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+          )
+          const ownedData = await ownedRes.json()
+          if (ownedData.data?.length > 0) pages.push(...ownedData.data)
+
+          // Client pages
+          const clientRes = await fetch(
+            `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+          )
+          const clientData = await clientRes.json()
+          if (clientData.data?.length > 0) pages.push(...clientData.data)
+        }
+      }
+    }
+
+    // Step 5: If still empty after all attempts, return debug info
     if (pages.length === 0) {
       const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
       const meData = await meRes.json()
