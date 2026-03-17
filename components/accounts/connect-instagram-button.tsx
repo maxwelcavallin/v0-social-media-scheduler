@@ -22,7 +22,7 @@ export function ConnectInstagramButton({ workspaceId }: Props) {
       className="gap-2 border-[oklch(0.52_0.25_15)]/40 text-[oklch(0.52_0.25_15)] hover:bg-[oklch(0.52_0.25_15)]/5"
     >
       <Instagram className="w-4 h-4" />
-      Conectar Instagram Business
+      Conectar Instagram direto
     </Button>
   )
 }
