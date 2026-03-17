@@ -5,6 +5,8 @@ import sql from "@/lib/db"
 // Instagram OAuth nativo — funciona para qualquer tipo de conta Instagram
 const IG_API = "https://api.instagram.com"
 const GRAPH_IG = "https://graph.instagram.com"
+// redirect_uri fixo — deve ser idêntico ao usado no authorize e ao cadastrado no painel Meta
+const REDIRECT_URI = "https://social.list.dog/api/social/instagram/callback"
 
 export async function POST(request: NextRequest) {
   const session = await getSession()
@@ -23,17 +25,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Configuração interna ausente." }, { status: 500 })
   }
 
-  const host = request.headers.get("host") ?? ""
-  const protocol = host.startsWith("localhost") ? "http" : "https"
-  const callbackUri = redirectUri || `${protocol}://${host}/api/social/instagram/callback`
-
   try {
     // Step 1: Trocar código por Short-Lived Access Token
+    // redirect_uri DEVE ser idêntico ao usado no authorize
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
       grant_type: "authorization_code",
-      redirect_uri: callbackUri,
+      redirect_uri: redirectUri || REDIRECT_URI,
       code,
     })
 
