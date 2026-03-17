@@ -76,8 +76,9 @@ async function publishToInstagram(item: {
   media_urls: string[] | null
   media_types: string[] | null
   post_type: string
+  cover_url?: string | null
 }): Promise<string> {
-  const { access_token, account_id, content, media_urls, media_types, post_type } = item
+  const { access_token, account_id, content, media_urls, media_types, post_type, cover_url } = item
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
@@ -104,6 +105,10 @@ async function publishToInstagram(item: {
     }
     if (!isStory && content) {
       containerBody.caption = content
+    }
+    // Reel cover image — Instagram accepts cover_url for REELS
+    if (isReel && cover_url) {
+      containerBody.cover_url = cover_url
     }
 
     const containerRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
@@ -198,7 +203,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media } = body
+  const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media, coverMedia } = body
 
   if (!workspaceId || !accountIds || accountIds.length === 0) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
@@ -299,13 +304,14 @@ export async function POST(request: NextRequest) {
               media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
               media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
             })
-          } else if (target.platform === "instagram") {
-            platformPostId = await publishToInstagram({
-              access_token: target.accessToken,
-              account_id: target.accountIdMeta,
-              content,
-              media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
-              media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
+  } else if (target.platform === "instagram") {
+  platformPostId = await publishToInstagram({
+  access_token: target.accessToken,
+  account_id: target.accountIdMeta,
+  content,
+  media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
+  media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
+  cover_url: coverMedia?.url ?? null,
               post_type: postType,
             })
           }
