@@ -96,25 +96,10 @@ export async function POST(request: NextRequest) {
     // ── Step 3: Save all found Instagram Business Accounts ────────────────────
     const savedAccounts: string[] = []
 
-    // Exchange short-lived User Token for long-lived User Token (60 days)
-    const longTokenRes = await fetch(
-      `${GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${userToken}`
-    )
-    const longTokenData = await longTokenRes.json()
-    const longUserToken = longTokenData.access_token || userToken
-    console.log("[instagram/process] Long-lived token obtido:", !!longTokenData.access_token)
-
     for (const page of igPages) {
       const ig = page.instagram_business_account
-
-      // Fetch Page Access Token explicitly — page tokens from /me/accounts may be short-lived
-      // Using the long-lived user token ensures the page token is also long-lived (never expires)
-      const pageTokenRes = await fetch(
-        `${GRAPH}/${page.id}?fields=access_token&access_token=${longUserToken}`
-      )
-      const pageTokenData = await pageTokenRes.json()
-      const pageAccessToken = pageTokenData.access_token || longUserToken
-      console.log("[instagram/process] Page token para", page.name, "obtido:", !!pageTokenData.access_token)
+      // Use the Page Access Token for publishing (required by Content Publishing API)
+      const pageAccessToken = page.access_token || userToken
 
       console.log("[instagram/process] Salvando conta:", ig.username, "| Page:", page.name)
 
