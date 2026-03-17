@@ -105,9 +105,15 @@ export default async function DashboardPostsPage() {
                   </p>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
-                      {post.scheduled_at
-                        ? new Date(post.scheduled_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
-                        : new Date(post.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                      {(() => {
+                        const toUtcDate = (s: string) => new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
+                        const d = toUtcDate(post.scheduled_at || post.created_at)
+                        return new Intl.DateTimeFormat("pt-BR", {
+                          timeZone: "America/Sao_Paulo",
+                          day: "2-digit", month: "short",
+                          hour: "2-digit", minute: "2-digit",
+                        }).format(d)
+                      })()}
                     </span>
                     <Badge variant={status.variant} className="text-xs">
                       {status.label}
