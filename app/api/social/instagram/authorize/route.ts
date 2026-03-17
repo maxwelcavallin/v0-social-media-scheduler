@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
-// Instagram Business Login — Instagram API with Instagram Login
-// https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
-// Funciona para qualquer conta profissional Instagram (business ou creator)
+// Conectar Instagram diretamente via Instagram OAuth nativo (api.instagram.com)
+// Funciona para qualquer conta: pessoal, criador de conteúdo ou empresarial
 // NÃO requer vinculação com página do Facebook ou Business Suite
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
@@ -17,27 +16,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Configuração interna ausente." }, { status: 500 })
   }
 
-  // redirect_uri deve ser exatamente o cadastrado no painel Meta para o INSTAGRAM_APP_ID
-  // O Meta exige que seja idêntico ao cadastrado — usar a URL raiz conforme configurado no app
-  const redirectUri = "https://social.list.dog/"
+  const host = request.headers.get("host") ?? ""
+  const protocol = host.startsWith("localhost") ? "http" : "https"
+  const redirectUri = `${protocol}://${host}/api/social/instagram/callback`
 
   const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri })).toString("base64")
 
   const params = new URLSearchParams({
-    force_reauth: "true",
     client_id: appId,
     redirect_uri: redirectUri,
+    scope: "instagram_business_basic,instagram_business_content_publish",
     response_type: "code",
-    scope: [
-      "instagram_business_basic",
-      "instagram_business_content_publish",
-      "instagram_business_manage_comments",
-      "instagram_business_manage_messages",
-    ].join(","),
     state,
   })
 
   return NextResponse.redirect(
-    `https://www.instagram.com/oauth/authorize?${params.toString()}`
+    `https://api.instagram.com/oauth/authorize?${params.toString()}`
   )
 }
