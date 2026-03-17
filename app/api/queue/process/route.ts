@@ -59,7 +59,7 @@ async function processQueue() {
     // Mark as processing immediately to prevent double-execution
     await sql`
       UPDATE post_queue
-      SET status = 'processing', last_attempt_at = NOW(), attempts = attempts + 1
+      SET status = 'processing', attempts = attempts + 1, updated_at = NOW()
       WHERE id = ${item.queue_id}
     `
 
@@ -134,17 +134,17 @@ async function processQueue() {
       `
     } else if (allFailed && maxReached) {
       // All targets failed and no more retries
-      await sql`UPDATE post_queue SET status = 'failed' WHERE id = ${item.queue_id}`
+      await sql`UPDATE post_queue SET status = 'failed', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}`
       await sql`
         UPDATE posts
         SET status = 'failed', error_message = ${errors.join("; ")}, updated_at = NOW()
         WHERE id = ${item.post_id}
       `
     } else if (allFailed) {
-      // Retry later
+      // Retry later — reset to pending, cron will pick it up again
       await sql`
         UPDATE post_queue
-        SET status = 'pending', next_retry_at = NOW() + INTERVAL '5 minutes'
+        SET status = 'pending', last_error = ${errors.join("; ")}, updated_at = NOW()
         WHERE id = ${item.queue_id}
       `
     } else {
