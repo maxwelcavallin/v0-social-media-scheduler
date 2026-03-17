@@ -30,6 +30,7 @@ import {
   Send,
   Film,
 } from "lucide-react"
+import { upload } from "@vercel/blob/client"
 import { cn } from "@/lib/utils"
 
 const schema = z.object({
@@ -72,48 +73,25 @@ const postTypeOptions = [
 const MAX_SIZE_MB = 15
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
-// Upload a single file via XHR with progress callback
-function uploadFileWithProgress(
+// Upload directly from browser to Vercel Blob (bypasses the 4.5MB serverless limit entirely)
+async function uploadFileWithProgress(
   file: File,
   onProgress: (pct: number) => void
 ): Promise<UploadedMedia> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    const formData = new FormData()
-    formData.append("file", file)
+  const ext = file.name.split(".").pop() || "bin"
+  const pathname = `posts/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-    }
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText)
-          resolve({
-            url: data.url,
-            type: data.type || (file.type.startsWith("video") ? "video" : "image"),
-            name: file.name,
-          })
-        } catch {
-          reject(new Error("Resposta inválida do servidor"))
-        }
-      } else {
-        try {
-          const err = JSON.parse(xhr.responseText)
-          reject(new Error(err.error || `Erro ${xhr.status} ao fazer upload`))
-        } catch {
-          reject(new Error(`Erro ${xhr.status} ao fazer upload`))
-        }
-      }
-    }
-    xhr.onerror = () => reject(new Error("Falha na conexão durante o upload"))
-    xhr.ontimeout = () => reject(new Error("Tempo esgotado no upload. Tente um arquivo menor."))
-    xhr.timeout = 120000
-
-    xhr.open("POST", "/api/media/upload")
-    xhr.send(formData)
+  const blob = await upload(pathname, file, {
+    access: "public",
+    handleUploadUrl: "/api/media/upload",
+    onUploadProgress: ({ percentage }) => onProgress(Math.round(percentage)),
   })
+
+  return {
+    url: blob.url,
+    type: file.type.startsWith("video") ? "video" : "image",
+    name: file.name,
+  }
 }
 
 export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
