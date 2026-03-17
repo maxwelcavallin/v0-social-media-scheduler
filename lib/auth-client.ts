@@ -15,6 +15,7 @@ export async function signInEmail(email: string, password: string) {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ email, password }),
   })
   const data = await res.json()
@@ -23,5 +24,5 @@ export async function signInEmail(email: string, password: string) {
 }
 
 export async function signOut() {
-  await fetch("/api/auth/logout", { method: "POST" })
+  await fetch("/api/auth/logout", { method: "POST", credentials: "include" })
 }
