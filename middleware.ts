@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { COOKIE_NAME } from "@/lib/auth"
+
+const COOKIE_NAME = "social-dog-session"
 
 const protectedPaths = ["/dashboard", "/workspace"]
 const authPaths = ["/login", "/register"]
