@@ -68,19 +68,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 2: Exchange short-lived token for long-lived token (60 days)
-    // ig_exchange_token MUST use graph.instagram.com, not graph.facebook.com
-    const longRes = await fetch(
-      `${IG_GRAPH}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
-    )
-    const longData = await longRes.json()
-    // If exchange fails, fall back to short-lived token (still works for saving)
-    const longToken = longData.access_token || shortToken
+    // Instagram Business Login already returns a long-lived token in Step 1.
+    // ig_exchange_token belongs to the deprecated Basic Display API and must NOT be used here.
+    const accessToken = shortToken
 
-    // Step 3: Fetch profile from graph.instagram.com/me using the Instagram token
-    // graph.facebook.com does NOT accept Instagram tokens (error 190)
+    // Step 2: Fetch profile via Instagram Graph API /me
     const meRes = await fetch(
-      `${IG_GRAPH}/me?fields=id,name,username,account_type&access_token=${longToken}`
+      `${IG_GRAPH}/me?fields=id,name,username,account_type&access_token=${accessToken}`
     )
     const meData = await meRes.json()
 
@@ -103,7 +97,7 @@ export async function POST(request: NextRequest) {
          profile_picture_url, access_token, is_active, last_sync_at, created_at, updated_at)
       VALUES
         (${workspaceId}, 'instagram', ${accountId}, null, ${accountName},
-         ${accountUsername}, ${profilePicture}, ${longToken},
+         ${accountUsername}, ${profilePicture}, ${accessToken},
          true, NOW(), NOW(), NOW())
       ON CONFLICT (platform, account_id)
       DO UPDATE SET
