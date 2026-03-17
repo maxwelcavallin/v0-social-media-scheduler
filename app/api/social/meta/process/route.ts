@@ -26,12 +26,13 @@ async function upsertAccount(fields: {
       ${fields.accessToken}, ${fields.profilePictureUrl},
       true, NOW(), NOW(), NOW()
     )
-    ON CONFLICT (workspace_id, platform, account_id) DO UPDATE SET
+    ON CONFLICT (platform, account_id) DO UPDATE SET
       access_token        = EXCLUDED.access_token,
       account_name        = EXCLUDED.account_name,
       account_username    = EXCLUDED.account_username,
       profile_picture_url = EXCLUDED.profile_picture_url,
       page_id             = EXCLUDED.page_id,
+      workspace_id        = EXCLUDED.workspace_id,
       is_active           = true,
       updated_at          = NOW(),
       last_sync_at        = NOW()
