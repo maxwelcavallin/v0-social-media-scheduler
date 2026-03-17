@@ -27,14 +27,18 @@ export async function POST(request: NextRequest) {
 
   try {
     // Step 1: Trocar código por Short-Lived Access Token
-    // redirect_uri DEVE ser idêntico ao usado no authorize
+    const usedRedirectUri = redirectUri || REDIRECT_URI
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
       grant_type: "authorization_code",
-      redirect_uri: redirectUri || REDIRECT_URI,
+      redirect_uri: usedRedirectUri,
       code,
     })
+
+    console.log("[v0] instagram/process - redirect_uri usado:", usedRedirectUri)
+    console.log("[v0] instagram/process - appId:", appId)
+    console.log("[v0] instagram/process - body:", tokenBody.toString().replace(appSecret, "***"))
 
     const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
@@ -43,9 +47,12 @@ export async function POST(request: NextRequest) {
     })
     const tokenData = await tokenRes.json()
 
+    console.log("[v0] instagram/process - tokenRes.status:", tokenRes.status)
+    console.log("[v0] instagram/process - tokenData:", JSON.stringify(tokenData))
+
     if (!tokenRes.ok || tokenData.error_type || tokenData.error) {
       return NextResponse.json(
-        { error: "Não foi possível autenticar. Tente novamente." },
+        { error: `Erro ao autenticar: ${tokenData.error_message || tokenData.error?.message || JSON.stringify(tokenData)}` },
         { status: 400 }
       )
     }
