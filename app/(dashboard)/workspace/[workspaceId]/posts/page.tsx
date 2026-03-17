@@ -168,8 +168,12 @@ export default async function WorkspacePostsPage({ params }: Props) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                       {(() => {
-                        // Ensure date strings from Neon (which may lack 'Z') are parsed as UTC
-                        const toUtcDate = (s: string) => new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
+                        // Neon may return Date objects or strings — normalize to Date safely
+                        const toUtcDate = (v: unknown): Date => {
+                          if (v instanceof Date) return v
+                          const s = String(v)
+                          return new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
+                        }
                         const fmt = (d: Date) => new Intl.DateTimeFormat("pt-BR", {
                           timeZone: "America/Sao_Paulo",
                           day: "2-digit", month: "short",

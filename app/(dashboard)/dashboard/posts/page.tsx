@@ -106,7 +106,11 @@ export default async function DashboardPostsPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                       {(() => {
-                        const toUtcDate = (s: string) => new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
+                        const toUtcDate = (v: unknown): Date => {
+                          if (v instanceof Date) return v
+                          const s = String(v)
+                          return new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
+                        }
                         const d = toUtcDate(post.scheduled_at || post.created_at)
                         return new Intl.DateTimeFormat("pt-BR", {
                           timeZone: "America/Sao_Paulo",
