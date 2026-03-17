@@ -97,44 +97,19 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, try Business Manager — two separate calls required
+    // Step 4: If still empty, try Business Manager pages
     if (pages.length === 0) {
-      // 4a: List businesses (no nested fields — Graph API does not support nesting here)
       const bizRes = await fetch(
-        `${GRAPH_API}/me/businesses?access_token=${userToken}&limit=10&fields=id,name`
+        `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
       )
       const bizData = await bizRes.json()
 
       if (bizData.data && bizData.data.length > 0) {
         for (const biz of bizData.data) {
-          // 4b: For each business, fetch owned pages with IG account
-          const ownedRes = await fetch(
-            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-          )
-          const ownedData = await ownedRes.json()
-
-          if (ownedData.data && ownedData.data.length > 0) {
-            for (const p of ownedData.data) {
-              // 4c: Fetch Page Access Token explicitly for each page
-              const pageTokenRes = await fetch(
-                `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
-              )
-              const pageTokenData = await pageTokenRes.json()
-              pages.push({
-                ...p,
-                access_token: pageTokenData.access_token || userToken,
-              })
-            }
-          }
-
-          // 4d: Also check client pages (pages managed on behalf of clients)
-          const clientRes = await fetch(
-            `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-          )
-          const clientData = await clientRes.json()
-
-          if (clientData.data && clientData.data.length > 0) {
-            for (const p of clientData.data) {
+          if (biz.owned_pages?.data?.length > 0) {
+            // For Business Manager pages, get a page token via token exchange
+            for (const p of biz.owned_pages.data) {
+              // Get a proper page access token
               const pageTokenRes = await fetch(
                 `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
               )
