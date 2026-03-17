@@ -12,12 +12,9 @@
  * Run once — the Meta review system tracks these calls automatically.
  */
 
-const [, , PAGE_TOKEN, PAGE_ID, IG_USER_ID] = process.argv
-
-if (!PAGE_TOKEN || !PAGE_ID || !IG_USER_ID) {
-  console.error("Uso: node scripts/meta-api-test.mjs <PAGE_ACCESS_TOKEN> <PAGE_ID> <IG_USER_ID>")
-  process.exit(1)
-}
+const PAGE_TOKEN = process.argv[2] || "EAA6CjZBQMCGMBQ3zZBOhSx0sqJPEcYGfJZA9tZBS8ez4dzl1bMDGIQXexOcQ5ckRGcZBu19ZAytO3Rs5ZB0NE5JnQll9od5JZCNn2DjELTelK9KL8N7lHDLP0ZAoq86j7d97WcC3sMTKrSzuNDevpsM4CKaptYxdEWQSSsWdpA5zclvBRx5gF34fFXg42cnEfq3HJHfHUeRap"
+const PAGE_ID = process.argv[3] || "747165455147245"
+const IG_USER_ID = process.argv[4] || "17841444796886622"
 
 const GRAPH = "https://graph.facebook.com/v22.0"
 
