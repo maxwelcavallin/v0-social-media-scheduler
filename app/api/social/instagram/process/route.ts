@@ -80,20 +80,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── Step 2: Fetch profile via graph.instagram.com/{user_id} ─────────────
-    // Token from api.instagram.com is Instagram-specific (IGAAN...).
-    // - graph.facebook.com rejects it (error 190 — cannot parse token)
-    // - graph.instagram.com/me rejects it (error 100 — method type get not supported for /me)
-    // - Correct endpoint: graph.instagram.com/{user_id}?fields=...&access_token=...
-    const accessToken = shortToken
+    // ── Step 2 (doc Step 3): Exchange short-lived token for long-lived token ──
+    // Per official docs: GET https://graph.instagram.com/access_token
+    //   ?grant_type=ig_exchange_token&client_secret=...&access_token=<short>
+    // This MUST be done BEFORE calling /me — /me rejects short-lived tokens.
+    console.log("[instagram/process] Step 2 — trocando token curto por longo via graph.instagram.com/access_token")
+    const longTokenUrl = `${IG_GRAPH}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
+    const longRes = await fetch(longTokenUrl, { method: "GET" })
+    const longData = await longRes.json()
+    console.log("[instagram/process] Step 2 long-token status:", longRes.status)
+    console.log("[instagram/process] Step 2 long-token resposta:", JSON.stringify(longData))
 
-    console.log("[instagram/process] Step 2 — buscando perfil em graph.instagram.com/{user_id}")
+    if (!longRes.ok || longData.error) {
+      return NextResponse.json(
+        { error: `Erro ao obter token longa duração: ${longData.error?.message} [tipo: ${longData.error?.type}, código: ${longData.error?.code}]` },
+        { status: 400 }
+      )
+    }
+
+    const accessToken = longData.access_token
+
+    // ── Step 3: Fetch profile using the long-lived token via graph.instagram.com/me ──
+    // /me works ONLY with long-lived tokens on graph.instagram.com
+    console.log("[instagram/process] Step 3 — buscando perfil em graph.instagram.com/me")
     const meRes = await fetch(
-      `${IG_GRAPH}/${igUserId}?fields=id,name,username,profile_picture_url&access_token=${accessToken}`
+      `${IG_GRAPH}/me?fields=id,name,username,profile_picture_url&access_token=${accessToken}`
     )
     const meData = await meRes.json()
-    console.log("[instagram/process] Step 2 status:", meRes.status)
-    console.log("[instagram/process] Step 2 resposta:", JSON.stringify(meData))
+    console.log("[instagram/process] Step 3 status:", meRes.status)
+    console.log("[instagram/process] Step 3 resposta:", JSON.stringify(meData))
 
     if (!meRes.ok || meData.error) {
       return NextResponse.json(
