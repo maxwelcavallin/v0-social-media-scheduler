@@ -8,6 +8,11 @@ const nextConfig = {
   },
   serverExternalPackages: ["bcryptjs"],
   cleanDistDir: true,
+  experimental: {
+    turbo: {
+      memoryLimit: 512,
+    },
+  },
 }
 
 export default nextConfig

@@ -21,18 +21,24 @@ export async function GET(request: NextRequest) {
     workspaceId = rawState || ""
   }
 
+  console.log("[v0] ig-callback code:", !!code, "workspaceId:", workspaceId, "error:", error)
+
   const accountsUrl = new URL(`/workspace/${workspaceId}/accounts`, request.url)
 
   if (error || !code || !workspaceId) {
+    console.log("[v0] ig-callback early-exit: error=", error, "code=", !!code, "workspaceId=", workspaceId)
     accountsUrl.searchParams.set("ig_error", error || "missing_params")
     return NextResponse.redirect(accountsUrl)
   }
 
   const appSecret = process.env.INSTAGRAM_APP_KEY
   if (!appSecret) {
+    console.log("[v0] ig-callback early-exit: INSTAGRAM_APP_KEY not set")
     accountsUrl.searchParams.set("ig_error", "config_error")
     return NextResponse.redirect(accountsUrl)
   }
+
+  console.log("[v0] ig-callback proceeding to token exchange")
 
   try {
     // Step 1: Trocar código por short-lived token — feito AQUI no servidor imediatamente
