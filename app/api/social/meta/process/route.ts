@@ -97,33 +97,34 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, try Business Manager (owned_pages + client_pages)
+    // Step 4: If still empty, try Business Manager pages
     if (pages.length === 0) {
       const bizRes = await fetch(
-        `${GRAPH_API}/me/businesses?access_token=${userToken}&limit=10&fields=id,name`
+        `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
       )
       const bizData = await bizRes.json()
 
       if (bizData.data && bizData.data.length > 0) {
         for (const biz of bizData.data) {
-          // Owned pages
-          const ownedRes = await fetch(
-            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-          )
-          const ownedData = await ownedRes.json()
-          if (ownedData.data?.length > 0) pages.push(...ownedData.data)
-
-          // Client pages
-          const clientRes = await fetch(
-            `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-          )
-          const clientData = await clientRes.json()
-          if (clientData.data?.length > 0) pages.push(...clientData.data)
+          if (biz.owned_pages?.data?.length > 0) {
+            // For Business Manager pages, get a page token via token exchange
+            for (const p of biz.owned_pages.data) {
+              // Get a proper page access token
+              const pageTokenRes = await fetch(
+                `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
+              )
+              const pageTokenData = await pageTokenRes.json()
+              pages.push({
+                ...p,
+                access_token: pageTokenData.access_token || userToken,
+              })
+            }
+          }
         }
       }
     }
 
-    // Step 5: If still empty after all attempts, return debug info
+    // Step 5: If still empty, show debug info
     if (pages.length === 0) {
       const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
       const meData = await meRes.json()
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Step 5: Save pages and linked Instagram accounts
+    // Step 6: Save pages and linked Instagram accounts
     const saved: { platform: string; name: string }[] = []
 
     for (const page of pages) {
