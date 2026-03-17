@@ -254,11 +254,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Save reel cover image as media_type = 'cover' with order_index = -1
+    // Save reel cover as media_type = 'image' with order_index = -1 (negative index identifies it as cover)
     if (coverMedia?.url) {
       await sql`
         INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
-        VALUES (gen_random_uuid(), ${postId}, ${coverMedia.url}, 'cover', -1, NOW())
+        VALUES (gen_random_uuid(), ${postId}, ${coverMedia.url}, 'image', -1, NOW())
       `
     }
 
