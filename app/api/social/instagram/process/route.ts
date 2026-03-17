@@ -2,10 +2,11 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 
-// Instagram OAuth nativo — funciona para qualquer tipo de conta Instagram
 const IG_API = "https://api.instagram.com"
 const GRAPH_IG = "https://graph.instagram.com"
-// redirect_uri fixo — deve ser idêntico ao usado no authorize e ao cadastrado no painel Meta
+// Deve ser idêntico ao client_id usado no authorize
+const CLIENT_ID = "2170374997100265"
+// Deve ser idêntico ao redirect_uri cadastrado no painel Meta para esse app
 const REDIRECT_URI = "https://social.list.dog/api/social/instagram/callback"
 
 export async function POST(request: NextRequest) {
@@ -18,27 +19,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
-  const appId = process.env.INSTAGRAM_APP_ID
   const appSecret = process.env.INSTAGRAM_APP_KEY
 
-  if (!appId || !appSecret) {
+  if (!appSecret) {
     return NextResponse.json({ error: "Configuração interna ausente." }, { status: 500 })
   }
 
   try {
     // Step 1: Trocar código por Short-Lived Access Token
+    // client_id e redirect_uri DEVEM ser idênticos aos usados no authorize
     const usedRedirectUri = redirectUri || REDIRECT_URI
     const tokenBody = new URLSearchParams({
-      client_id: appId,
+      client_id: CLIENT_ID,
       client_secret: appSecret,
       grant_type: "authorization_code",
       redirect_uri: usedRedirectUri,
       code,
     })
 
-    console.log("[v0] instagram/process - redirect_uri usado:", usedRedirectUri)
-    console.log("[v0] instagram/process - appId:", appId)
-    console.log("[v0] instagram/process - body:", tokenBody.toString().replace(appSecret, "***"))
+    console.log("[v0] instagram/process - client_id:", CLIENT_ID)
+    console.log("[v0] instagram/process - redirect_uri:", usedRedirectUri)
+    console.log("[v0] instagram/process - body (sem secret):", tokenBody.toString().replace(appSecret, "***"))
 
     const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
