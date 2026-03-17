@@ -19,11 +19,11 @@ export async function POST(request: NextRequest) {
   }
 
   const appId = process.env.FACEBOOK_APP_ID
-  const appSecret = process.env.FACEBOOK_APP_KEY
+  const appSecret = process.env.FACEBOOK_APP_SECRET
 
   if (!appId || !appSecret) {
     return NextResponse.json(
-      { error: "FACEBOOK_APP_ID ou FACEBOOK_APP_KEY não configurados." },
+      { error: "FACEBOOK_APP_ID ou FACEBOOK_APP_SECRET não configurados." },
       { status: 500 }
     )
   }
