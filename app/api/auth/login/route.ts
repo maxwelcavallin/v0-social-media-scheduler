@@ -26,9 +26,13 @@ export async function POST(request: NextRequest) {
     const token = await createSessionToken({ id: user.id, name: user.name, email: user.email, plan: user.plan })
 
     const response = NextResponse.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, plan: user.plan } })
+    // secure: true works for both production and v0.dev preview (both use HTTPS)
+    // Only disable secure on explicit localhost (non-HTTPS dev)
+    const host = request.headers.get("host") || ""
+    const isLocalHttp = host.includes("localhost") || host.includes("127.0.0.1")
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: !isLocalHttp,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
