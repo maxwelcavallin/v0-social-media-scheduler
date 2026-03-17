@@ -68,17 +68,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 2: Exchange short-lived token for long-lived token via POST
-    const longBody = new URLSearchParams({
+    // Step 2: Exchange short-lived token for long-lived token via GET
+    // Instagram long-lived token exchange REQUIRES GET, not POST
+    const longParams = new URLSearchParams({
       grant_type: "ig_exchange_token",
       client_secret: appSecret,
       access_token: shortToken,
     })
-    const longRes = await fetch(`${IG_GRAPH}/access_token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: longBody.toString(),
-    })
+    const longRes = await fetch(`${IG_GRAPH}/access_token?${longParams.toString()}`)
     const longData = await longRes.json()
 
     if (longData.error) {
