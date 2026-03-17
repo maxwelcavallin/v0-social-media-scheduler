@@ -68,33 +68,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 2: Exchange for long-lived token via graph.facebook.com (Instagram Business Login uses FB graph)
+    // Step 2: Exchange short-lived token for long-lived token (60 days)
+    // ig_exchange_token MUST use graph.instagram.com, not graph.facebook.com
     const longRes = await fetch(
-      `${GRAPH}/oauth/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
+      `${IG_GRAPH}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
     )
     const longData = await longRes.json()
+    // If exchange fails, fall back to short-lived token (still works for saving)
     const longToken = longData.access_token || shortToken
 
-    // Step 3: Get Instagram profile via igUserId on graph.facebook.com
-    // The new Instagram Business Login returns user_id from token exchange — use it directly
+    // Step 3: Fetch profile from graph.instagram.com/me using the Instagram token
+    // graph.facebook.com does NOT accept Instagram tokens (error 190)
     const meRes = await fetch(
-      `${GRAPH}/${igUserId}?fields=id,name,username&access_token=${longToken}`
+      `${IG_GRAPH}/me?fields=id,name,username,account_type&access_token=${longToken}`
     )
     const meData = await meRes.json()
 
     if (meData.error) {
-      // Fallback: try fetching via /me on graph.facebook.com
-      const meFallback = await fetch(
-        `${GRAPH}/me?fields=id,name&access_token=${longToken}`
+      return NextResponse.json(
+        { error: `Erro ao buscar perfil: ${meData.error.message} [código ${meData.error.code}]` },
+        { status: 400 }
       )
-      const meFallbackData = await meFallback.json()
-      if (meFallbackData.error) {
-        return NextResponse.json(
-          { error: `Erro ao buscar perfil: ${meFallbackData.error.message} [código ${meFallbackData.error.code}]` },
-          { status: 400 }
-        )
-      }
-      Object.assign(meData, meFallbackData)
     }
 
     const accountId = meData.id || igUserId
