@@ -6,20 +6,18 @@ const GRAPH_API = "https://graph.facebook.com/v22.0"
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300
 
-// GET — called by Vercel Cron (Authorization: Bearer CRON_SECRET)
+// GET — called by Vercel Cron every 5 minutes
+// Vercel sends: Authorization: Bearer <CRON_SECRET>
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET
-
-  // If CRON_SECRET is set, validate Vercel's cron bearer token
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
-
   return processQueue()
 }
 
-// POST — called internally with x-queue-secret after immediate posts
+// POST — called internally after immediate posts (kept for backwards compat)
 export async function POST(request: NextRequest) {
   const secret = request.headers.get("x-queue-secret")
   if (secret !== (process.env.QUEUE_SECRET || "postflow-queue")) {
@@ -29,91 +27,155 @@ export async function POST(request: NextRequest) {
 }
 
 async function processQueue() {
+  // Fetch pending queue entries whose scheduled time has arrived
+  // Each queue entry corresponds to one post, which may have multiple targets
   const pendingItems = await sql`
     SELECT
-      pq.id as queue_id,
+      pq.id        AS queue_id,
       pq.post_id,
       pq.attempts,
       pq.max_attempts,
-      pt.post_type,
-      pt.id as target_id,
-      p.id as post_id_ref,
       p.content,
-      sa.platform,
-      sa.account_id,
-      sa.page_id,
-      sa.access_token,
-      ARRAY_AGG(pm.url ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_urls,
-      ARRAY_AGG(pm.media_type ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) as media_types
+      p.workspace_id,
+      ARRAY_AGG(pm.url   ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) AS media_urls,
+      ARRAY_AGG(pm.media_type ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) AS media_types
     FROM post_queue pq
     JOIN posts p ON p.id = pq.post_id
-    JOIN post_targets pt ON pt.post_id = p.id
-    JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
     WHERE pq.status IN ('pending', 'processing')
       AND pq.scheduled_at <= NOW()
       AND pq.attempts < pq.max_attempts
-    GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts,
-             pt.post_type, pt.id, p.id, p.content,
-             sa.platform, sa.account_id, sa.page_id, sa.access_token
+    GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts, p.content, p.workspace_id
     LIMIT 10
   `
+
+  if (pendingItems.length === 0) {
+    return NextResponse.json({ processed: 0, results: [] })
+  }
 
   const results = []
 
   for (const item of pendingItems) {
-    try {
-      await sql`
-        UPDATE post_queue SET status = 'processing', last_attempt_at = NOW(),
-          attempts = attempts + 1 WHERE id = ${item.queue_id}
-      `
+    // Mark as processing immediately to prevent double-execution
+    await sql`
+      UPDATE post_queue
+      SET status = 'processing', last_attempt_at = NOW(), attempts = attempts + 1
+      WHERE id = ${item.queue_id}
+    `
 
-      let platformPostId: string | null = null
+    // Fetch all pending targets for this post
+    const targets = await sql`
+      SELECT
+        pt.id           AS target_id,
+        pt.post_type,
+        pt.status       AS target_status,
+        sa.platform,
+        sa.account_id,
+        sa.page_id,
+        sa.access_token
+      FROM post_targets pt
+      JOIN social_accounts sa ON sa.id = pt.social_account_id
+      WHERE pt.post_id = ${item.post_id}
+        AND pt.status = 'pending'
+    `
 
-      if (item.platform === "facebook") {
-        platformPostId = await publishToFacebook(item)
-      } else if (item.platform === "instagram") {
-        platformPostId = await publishToInstagram(item)
+    const errors: string[] = []
+
+    for (const target of targets) {
+      try {
+        let platformPostId: string | null = null
+
+        if (target.platform === "facebook") {
+          platformPostId = await publishToFacebook({
+            access_token: target.access_token,
+            page_id: target.page_id,
+            content: item.content,
+            media_urls: item.media_urls,
+            media_types: item.media_types,
+          })
+        } else if (target.platform === "instagram") {
+          platformPostId = await publishToInstagram({
+            access_token: target.access_token,
+            account_id: target.account_id,
+            content: item.content,
+            media_urls: item.media_urls,
+            media_types: item.media_types,
+            post_type: target.post_type,
+          })
+        }
+
+        await sql`
+          UPDATE post_targets
+          SET status = 'published', platform_post_id = ${platformPostId}
+          WHERE id = ${target.target_id}
+        `
+      } catch (err: any) {
+        const errMsg = err?.message || String(err)
+        console.error(`[queue] Failed target ${target.target_id} (${target.platform}):`, errMsg)
+        errors.push(`${target.platform}: ${errMsg}`)
+        await sql`
+          UPDATE post_targets
+          SET status = 'failed', error_message = ${errMsg}
+          WHERE id = ${target.target_id}
+        `
       }
+    }
 
+    // Update queue entry based on results
+    const allFailed = errors.length > 0 && errors.length === targets.length
+    const maxReached = (item.attempts) >= item.max_attempts
+
+    if (errors.length === 0) {
+      // All targets published successfully
       await sql`UPDATE post_queue SET status = 'published' WHERE id = ${item.queue_id}`
       await sql`
-        UPDATE post_targets SET status = 'published',
-          platform_post_id = ${platformPostId} WHERE id = ${item.target_id}
+        UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW()
+        WHERE id = ${item.post_id}
       `
-
-      const pendingTargets = await sql`
-        SELECT COUNT(*)::int as count FROM post_targets
-        WHERE post_id = ${item.post_id_ref} AND status != 'published'
-      `
-      if (pendingTargets[0].count === 0) {
-        await sql`UPDATE posts SET status = 'published', published_at = NOW() WHERE id = ${item.post_id_ref}`
-      }
-
-      results.push({ queueId: item.queue_id, status: "published" })
-    } catch (err: any) {
-      console.error(`[queue] Error processing ${item.queue_id}:`, err.message)
-
-      const isMaxAttempts = (item.attempts + 1) >= item.max_attempts
+    } else if (allFailed && maxReached) {
+      // All targets failed and no more retries
+      await sql`UPDATE post_queue SET status = 'failed' WHERE id = ${item.queue_id}`
       await sql`
-        UPDATE post_queue SET
-          status = ${isMaxAttempts ? "failed" : "pending"},
-          next_retry_at = NOW() + INTERVAL '5 minutes'
+        UPDATE posts
+        SET status = 'failed', error_message = ${errors.join("; ")}, updated_at = NOW()
+        WHERE id = ${item.post_id}
+      `
+    } else if (allFailed) {
+      // Retry later
+      await sql`
+        UPDATE post_queue
+        SET status = 'pending', next_retry_at = NOW() + INTERVAL '5 minutes'
         WHERE id = ${item.queue_id}
       `
-      if (isMaxAttempts) {
-        await sql`UPDATE post_targets SET status = 'failed', error_message = ${err.message} WHERE id = ${item.target_id}`
-        await sql`UPDATE posts SET status = 'failed', error_message = ${err.message} WHERE id = ${item.post_id_ref}`
-      }
-
-      results.push({ queueId: item.queue_id, status: "failed", error: err.message })
+    } else {
+      // Some targets succeeded — mark post as published
+      await sql`UPDATE post_queue SET status = 'published' WHERE id = ${item.queue_id}`
+      await sql`
+        UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW()
+        WHERE id = ${item.post_id}
+      `
     }
+
+    results.push({
+      queueId: item.queue_id,
+      postId: item.post_id,
+      targets: targets.length,
+      errors: errors.length,
+    })
   }
 
   return NextResponse.json({ processed: results.length, results })
 }
 
-async function publishToFacebook(item: any): Promise<string> {
+// ─── Facebook publish ─────────────────────────────────────────────────────────
+
+async function publishToFacebook(item: {
+  access_token: string
+  page_id: string
+  content: string
+  media_urls: string[] | null
+  media_types: string[] | null
+}): Promise<string> {
   const { access_token, page_id, content, media_urls, media_types } = item
 
   if (!media_urls || media_urls.length === 0) {
@@ -143,7 +205,6 @@ async function publishToFacebook(item: any): Promise<string> {
     return data.id || data.post_id
   }
 
-  // Carousel
   const photoIds: string[] = []
   for (const url of media_urls) {
     const r = await fetch(`${GRAPH_API}/${page_id}/photos`, {
@@ -155,7 +216,6 @@ async function publishToFacebook(item: any): Promise<string> {
     if (d.error) throw new Error(d.error.message)
     photoIds.push(d.id)
   }
-
   const feedRes = await fetch(`${GRAPH_API}/${page_id}/feed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,28 +230,47 @@ async function publishToFacebook(item: any): Promise<string> {
   return feedData.id
 }
 
-async function publishToInstagram(item: any): Promise<string> {
-  const { access_token, account_id, content, media_urls, media_types, post_type } = item
+// ─── Instagram publish ────────────────────────────────────────────────────────
 
-  if (!media_urls || media_urls.length === 0) throw new Error("Instagram requires media")
+async function publishToInstagram(item: {
+  access_token: string
+  account_id: string
+  content: string
+  media_urls: string[] | null
+  media_types: string[] | null
+  post_type: string
+  cover_url?: string | null
+}): Promise<string> {
+  const { access_token, account_id, content, media_urls, media_types, post_type, cover_url } = item
+
+  if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
   if (media_urls.length === 1) {
-    const isVideo = media_types?.[0] === "video" || post_type === "reel"
+    const isStory = post_type === "story"
+    const isReel = post_type === "reel"
+    const isVideo = media_types?.[0] === "video" || isReel
+
+    let mediaType: string
+    if (isReel) mediaType = "REELS"
+    else if (isStory) mediaType = "STORIES"
+    else if (isVideo) mediaType = "VIDEO"
+    else mediaType = "IMAGE"
+
+    const containerBody: Record<string, string | boolean> = { media_type: mediaType, access_token }
+    if (isVideo) containerBody.video_url = media_urls[0]
+    else containerBody.image_url = media_urls[0]
+    if (!isStory && content) containerBody.caption = content
+    if (isReel && cover_url) containerBody.cover_url = cover_url
+
     const containerRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: !isVideo ? media_urls[0] : undefined,
-        video_url: isVideo ? media_urls[0] : undefined,
-        media_type: isVideo ? "REELS" : "IMAGE",
-        caption: content,
-        access_token,
-      }),
+      body: JSON.stringify(containerBody),
     })
     const containerData = await containerRes.json()
-    if (containerData.error) throw new Error(containerData.error.message)
+    if (containerData.error) throw new Error(`Container: ${containerData.error.message} [${containerData.error.code}]`)
 
-    await waitForContainer(containerData.id, access_token)
+    await waitForContainer(containerData.id, access_token, isVideo ? 120000 : 15000)
 
     const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
       method: "POST",
@@ -205,31 +284,32 @@ async function publishToInstagram(item: any): Promise<string> {
 
   // Carousel
   const itemIds: string[] = []
-  for (const url of media_urls) {
+  for (let i = 0; i < media_urls.length; i++) {
+    const url = media_urls[i]
+    const isItemVideo = media_types?.[i] === "video"
     const r = await fetch(`${GRAPH_API}/${account_id}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token }),
+      body: JSON.stringify({
+        ...(isItemVideo ? { video_url: url, media_type: "VIDEO" } : { image_url: url }),
+        is_carousel_item: true,
+        access_token,
+      }),
     })
     const d = await r.json()
-    if (d.error) throw new Error(d.error.message)
+    if (d.error) throw new Error(`Item ${i + 1}: ${d.error.message}`)
     itemIds.push(d.id)
   }
 
   const carouselRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      media_type: "CAROUSEL",
-      children: itemIds.join(","),
-      caption: content,
-      access_token,
-    }),
+    body: JSON.stringify({ media_type: "CAROUSEL", children: itemIds.join(","), caption: content, access_token }),
   })
   const carouselData = await carouselRes.json()
   if (carouselData.error) throw new Error(carouselData.error.message)
 
-  await waitForContainer(carouselData.id, access_token)
+  await waitForContainer(carouselData.id, access_token, 30000)
 
   const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
     method: "POST",
@@ -241,14 +321,14 @@ async function publishToInstagram(item: any): Promise<string> {
   return publishData.id
 }
 
-async function waitForContainer(containerId: string, token: string, maxWait = 30000): Promise<void> {
+async function waitForContainer(containerId: string, token: string, maxWaitMs = 30000): Promise<void> {
   const start = Date.now()
-  while (Date.now() - start < maxWait) {
-    const res = await fetch(`${GRAPH_API}/${containerId}?fields=status_code&access_token=${token}`)
+  while (Date.now() - start < maxWaitMs) {
+    const res = await fetch(`${GRAPH_API}/${containerId}?fields=status_code,status&access_token=${token}`)
     const data = await res.json()
     if (data.status_code === "FINISHED") return
-    if (data.status_code === "ERROR") throw new Error("Instagram container processing failed")
-    await new Promise((r) => setTimeout(r, 2000))
+    if (data.status_code === "ERROR") throw new Error(`Container failed: ${data.status || "unknown"}`)
+    await new Promise((r) => setTimeout(r, 3000))
   }
-  throw new Error("Instagram container timed out")
+  throw new Error("Container timed out")
 }
