@@ -29,14 +29,13 @@ export async function POST(request: NextRequest) {
     // secure: true works for both production and v0.dev preview (both use HTTPS)
     // Only disable secure on explicit localhost (non-HTTPS dev)
     const host = request.headers.get("host") || ""
-    const proto = request.headers.get("x-forwarded-proto") || "https"
-    const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1")
-    // v0 preview runs in an iframe on vusercontent.net — needs sameSite=none + secure
+    const isLocalHttp = host.includes("localhost") || host.includes("127.0.0.1")
+    // v0.dev preview runs inside an iframe — needs sameSite "none" + secure to send cookies cross-frame
+    // Production and localhost use "lax"
     const isPreview = host.includes("vusercontent.net") || host.includes("v0.dev")
-    const isHttps = proto === "https" || !isLocal
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
-      secure: isHttps,
+      secure: !isLocalHttp,
       sameSite: isPreview ? "none" : "lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
