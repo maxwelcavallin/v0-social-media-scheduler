@@ -2,8 +2,9 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 
-// Instagram OAuth nativo — funciona para qualquer tipo de conta Instagram
-const IG_API = "https://api.instagram.com"
+// Instagram API with Instagram Login
+// https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
+const IG_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
 const GRAPH_IG = "https://graph.instagram.com"
 
 export async function POST(request: NextRequest) {
@@ -23,12 +24,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Configuração interna ausente." }, { status: 500 })
   }
 
-  const host = request.headers.get("host") ?? ""
-  const protocol = host.startsWith("localhost") ? "http" : "https"
-  const callbackUri = redirectUri || `${protocol}://${host}/api/social/instagram/callback`
+  // redirect_uri deve ser idêntico ao usado no authorize
+  const callbackUri = redirectUri || "https://social.list.dog/api/social/instagram/callback"
 
   try {
-    // Step 1: Trocar código por Short-Lived Access Token
+    // Step 1: Trocar código por Short-Lived Token
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       code,
     })
 
-    const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
+    const tokenRes = await fetch(IG_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: tokenBody.toString(),
@@ -45,10 +45,8 @@ export async function POST(request: NextRequest) {
     const tokenData = await tokenRes.json()
 
     if (!tokenRes.ok || tokenData.error_type || tokenData.error) {
-      return NextResponse.json(
-        { error: "Não foi possível autenticar. Tente novamente." },
-        { status: 400 }
-      )
+      const msg = tokenData.error_message || tokenData.error?.message || "Erro de autenticação."
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
 
     const shortToken = tokenData.access_token
@@ -59,26 +57,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Trocar por Long-Lived Token (60 dias)
+    // https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login#get-a-long-lived-token
     const llRes = await fetch(
       `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
     )
     const llData = await llRes.json()
     const longToken = llData.access_token || shortToken
 
-    // Step 3: Buscar perfil do usuário
+    // Step 3: Buscar perfil — campos disponíveis na Instagram API with Instagram Login
     const profileRes = await fetch(
-      `${GRAPH_IG}/${igUserId}?fields=id,name,username,profile_picture_url,account_type&access_token=${longToken}`
+      `${GRAPH_IG}/v22.0/${igUserId}?fields=id,name,username,profile_picture_url,account_type,followers_count&access_token=${longToken}`
     )
     const profile = await profileRes.json()
 
     if (profile.error) {
       return NextResponse.json(
-        { error: "Não foi possível obter o perfil do Instagram." },
+        { error: `Erro ao buscar perfil: ${profile.error.message}` },
         { status: 400 }
       )
     }
 
-    // Step 4: Salvar conta Instagram
+    // Step 4: Salvar conta Instagram no banco
     await sql`
       INSERT INTO social_accounts
         (workspace_id, platform, account_id, page_id, account_name, account_username,
