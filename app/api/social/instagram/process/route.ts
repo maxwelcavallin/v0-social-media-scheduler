@@ -68,19 +68,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Instagram Business Login already returns a long-lived token in Step 1.
-    // ig_exchange_token belongs to the deprecated Basic Display API and must NOT be used here.
-    const accessToken = shortToken
+    // Step 2: Exchange short-lived token for long-lived token (60 days)
+    // Correct URL: https://graph.instagram.com/access_token (NO /v22.0/ prefix)
+    const longLivedUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
+    const longRes = await fetch(longLivedUrl)
+    const longData = await longRes.json()
 
-    // Step 2: Fetch profile via Instagram Graph API /me
+    if (!longRes.ok || longData.error) {
+      // Log exact error from Step 2 to help diagnose
+      const errDetail = longData.error
+        ? `${longData.error.message} [tipo: ${longData.error.type}, código: ${longData.error.code}]`
+        : `HTTP ${longRes.status}`
+      return NextResponse.json(
+        { error: `Erro ao obter token longa duração: ${errDetail}` },
+        { status: 400 }
+      )
+    }
+
+    const accessToken = longData.access_token
+
+    // Step 3: Fetch profile — only proceed if Step 2 succeeded with a valid token
+    // URL: https://graph.instagram.com/v22.0/me?fields=id,username&access_token=...
     const meRes = await fetch(
       `${IG_GRAPH}/me?fields=id,name,username,account_type&access_token=${accessToken}`
     )
     const meData = await meRes.json()
 
-    if (meData.error) {
+    if (!meRes.ok || meData.error) {
       return NextResponse.json(
-        { error: `Erro ao buscar perfil: ${meData.error.message} [código ${meData.error.code}]` },
+        { error: `Erro ao buscar perfil: ${meData.error?.message} [código ${meData.error?.code}]` },
         { status: 400 }
       )
     }
