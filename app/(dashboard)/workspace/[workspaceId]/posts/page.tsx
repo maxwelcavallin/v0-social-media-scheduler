@@ -49,7 +49,7 @@ export default async function WorkspacePostsPage({ params }: Props) {
       FROM social_accounts WHERE workspace_id = ${workspaceId} AND is_active = true
     `,
     sql`
-      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at, p.error_message,
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.published_at, p.created_at, p.error_message,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
         COUNT(DISTINCT pm.id)::int as media_count,
@@ -152,15 +152,21 @@ export default async function WorkspacePostsPage({ params }: Props) {
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
-                      {post.scheduled_at
-                        ? new Intl.DateTimeFormat("pt-BR", {
+                      {(() => {
+                        const dateToShow = post.published_at || post.scheduled_at
+                        const label = post.status === "published" ? "Publicado " : post.scheduled_at ? "Agendado " : ""
+                        if (dateToShow) {
+                          return label + new Intl.DateTimeFormat("pt-BR", {
                             timeZone: "America/Sao_Paulo",
                             day: "2-digit", month: "short",
                             hour: "2-digit", minute: "2-digit",
-                          }).format(new Date(post.scheduled_at))
-                        : new Date(post.created_at).toLocaleDateString("pt-BR", {
-                            day: "2-digit", month: "short",
-                          })}
+                          }).format(new Date(dateToShow))
+                        }
+                        return new Intl.DateTimeFormat("pt-BR", {
+                          timeZone: "America/Sao_Paulo",
+                          day: "2-digit", month: "short",
+                        }).format(new Date(post.created_at))
+                      })()}
                     </span>
                     <div className="flex items-center gap-1">
                       <Badge variant={status.variant} className="text-xs">

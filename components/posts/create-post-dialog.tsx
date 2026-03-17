@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -29,6 +29,7 @@ import {
   CalendarDays,
   Send,
   Film,
+  GripVertical,
 } from "lucide-react"
 import { upload } from "@vercel/blob/client"
 import { cn } from "@/lib/utils"
@@ -73,20 +74,24 @@ const postTypeOptions = [
 const MAX_SIZE_MB = 15
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
-// Upload directly from browser to Vercel Blob (bypasses the 4.5MB serverless limit entirely)
+// Accept attribute per post type
+const getAccept = (postType: string) => {
+  if (postType === "reel") return "video/*"
+  return "image/*,video/*"
+}
+
+// Upload directly from browser to Vercel Blob (no serverless payload limit)
 async function uploadFileWithProgress(
   file: File,
   onProgress: (pct: number) => void
 ): Promise<UploadedMedia> {
   const ext = file.name.split(".").pop() || "bin"
   const pathname = `posts/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-
   const blob = await upload(pathname, file, {
     access: "public",
     handleUploadUrl: "/api/media/upload",
     onUploadProgress: ({ percentage }) => onProgress(Math.round(percentage)),
   })
-
   return {
     url: blob.url,
     type: file.type.startsWith("video") ? "video" : "image",
@@ -100,23 +105,25 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Uploaded media state — populated as soon as files are selected
+  // Uploaded media state
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([])
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([])
 
-  // Upload in progress state (shown while a file is being uploaded)
+  // Upload progress state
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadingFileName, setUploadingFileName] = useState("")
 
   // Reel cover image
-  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
   const [uploadedCover, setUploadedCover] = useState<UploadedMedia | null>(null)
   const [uploadingCover, setUploadingCover] = useState(false)
   const [coverProgress, setCoverProgress] = useState(0)
 
   const [charCount, setCharCount] = useState(0)
+
+  // Drag-and-drop state for carousel
+  const dragIndex = useRef<number | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
@@ -129,6 +136,30 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   const scheduleType = watch("scheduleType")
   const accountIds = watch("accountIds") || []
   const postType = watch("postType")
+
+  // ── Drag-and-drop reorder (carousel) ──────────────────────────────────────
+  const handleDragStart = (idx: number) => { dragIndex.current = idx }
+
+  const handleDrop = (targetIdx: number) => {
+    const from = dragIndex.current
+    if (from === null || from === targetIdx) return
+    dragIndex.current = null
+
+    setUploadedMedia((prev) => {
+      const arr = [...prev]
+      const [item] = arr.splice(from, 1)
+      arr.splice(targetIdx, 0, item)
+      return arr
+    })
+    setMediaPreviews((prev) => {
+      const arr = [...prev]
+      const [item] = arr.splice(from, 1)
+      arr.splice(targetIdx, 0, item)
+      return arr
+    })
+  }
+
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault()
 
   // ── File selection → immediate upload ──────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,7 +182,6 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
       setUploadProgress(0)
       setUploadingFileName(file.name)
 
-      // Show local preview immediately
       const localPreview = URL.createObjectURL(file)
       setMediaPreviews((prev) => [...prev, localPreview].slice(0, maxFiles))
 
@@ -174,23 +204,19 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ""
-
     if (file.size > MAX_SIZE_BYTES) {
       setError(`Capa excede o limite de ${MAX_SIZE_MB}MB.`)
       return
     }
     setError(null)
-    setCoverFile(file)
     setCoverPreview(URL.createObjectURL(file))
     setUploadingCover(true)
     setCoverProgress(0)
-
     try {
       const uploaded = await uploadFileWithProgress(file, (pct) => setCoverProgress(pct))
       setUploadedCover(uploaded)
     } catch (err: any) {
       setError(err.message || "Erro ao fazer upload da capa")
-      setCoverFile(null)
       setCoverPreview(null)
     } finally {
       setUploadingCover(false)
@@ -204,24 +230,24 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   }
 
   const removeCover = () => {
-    setCoverFile(null)
     setCoverPreview(null)
     setUploadedCover(null)
   }
 
+  const resetForm = () => {
+    reset()
+    setUploadedMedia([])
+    setMediaPreviews([])
+    setCoverPreview(null)
+    setUploadedCover(null)
+    setError(null)
+    setCharCount(0)
+  }
+
   const handleClose = (v: boolean) => {
-    if (uploading || submitting) return
+    if (uploading || (submitting && scheduleType !== "now")) return
     setOpen(v)
-    if (!v) {
-      reset()
-      setUploadedMedia([])
-      setMediaPreviews([])
-      setCoverFile(null)
-      setCoverPreview(null)
-      setUploadedCover(null)
-      setError(null)
-      setCharCount(0)
-    }
+    if (!v) resetForm()
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────
@@ -230,33 +256,48 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
       setError("Aguarde o upload da mídia terminar antes de publicar.")
       return
     }
-
     setSubmitting(true)
     setError(null)
 
+    const payload = {
+      workspaceId,
+      content: data.content || "",
+      postType: data.postType,
+      scheduleType: data.scheduleType,
+      scheduledAt: data.scheduledAt,
+      accountIds: data.accountIds,
+      media: uploadedMedia,
+      coverMedia: uploadedCover || undefined,
+    }
+
+    // For "now" posts: close modal immediately and publish in background
+    if (data.scheduleType === "now") {
+      setOpen(false)
+      resetForm()
+      setSubmitting(false)
+      // Fire-and-forget — router.refresh() after completion to update UI
+      fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(() => router.refresh()).catch(() => router.refresh())
+      return
+    }
+
+    // For scheduled posts: wait for confirmation before closing
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId,
-          content: data.content || "",
-          postType: data.postType,
-          scheduleType: data.scheduleType,
-          scheduledAt: data.scheduledAt,
-          accountIds: data.accountIds,
-          media: uploadedMedia,
-          coverMedia: uploadedCover || undefined,
-        }),
+        body: JSON.stringify(payload),
       })
-
       const json = await res.json()
       if (!res.ok) {
-        setError(json.error || "Erro ao criar post")
+        setError(json.error || "Erro ao agendar post")
         return
       }
-
-      handleClose(false)
+      setOpen(false)
+      resetForm()
       router.refresh()
     } catch (err: any) {
       setError(err.message || "Erro inesperado. Tente novamente.")
@@ -265,7 +306,6 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     }
   }
 
-  // Convert a Date to "YYYY-MM-DDTHH:mm" in America/Sao_Paulo timezone
   const toBrasiliaLocal = (date: Date): string => {
     const fmt = new Intl.DateTimeFormat("sv-SE", {
       timeZone: "America/Sao_Paulo",
@@ -328,7 +368,6 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                         setValue("postType", v as any)
                         setUploadedMedia([])
                         setMediaPreviews([])
-                        setCoverFile(null)
                         setCoverPreview(null)
                         setUploadedCover(null)
                       }}
@@ -351,23 +390,49 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                     <Label>
                       Mídia
                       <span className="text-xs text-muted-foreground ml-2 font-normal">
-                        máx. {MAX_SIZE_MB}MB · imagem ou vídeo
-                        {postType === "carousel" && " · até 10 itens"}
+                        máx. {MAX_SIZE_MB}MB
+                        {postType === "reel" && " · somente vídeo"}
+                        {(postType === "feed" || postType === "story") && " · imagem ou vídeo"}
+                        {postType === "carousel" && " · imagens e vídeos · até 10 itens"}
                       </span>
                     </Label>
 
-                    {/* Previews */}
+                    {/* Previews — with drag-and-drop for carousel */}
                     {mediaPreviews.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
+                      <div className={cn("flex gap-2", postType === "carousel" ? "flex-wrap" : "")}>
                         {mediaPreviews.map((src, idx) => {
                           const isVideo = uploadedMedia[idx]?.type === "video"
                           return (
-                            <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-border group bg-black">
+                            <div
+                              key={idx}
+                              draggable={postType === "carousel"}
+                              onDragStart={() => handleDragStart(idx)}
+                              onDrop={() => handleDrop(idx)}
+                              onDragOver={handleDragOver}
+                              className={cn(
+                                "relative rounded-lg overflow-hidden border border-border group bg-black",
+                                postType === "carousel"
+                                  ? "w-20 h-20 cursor-grab active:cursor-grabbing"
+                                  : "w-20 h-20"
+                              )}
+                            >
                               {isVideo ? (
                                 <video src={src} className="w-full h-full object-cover" muted />
                               ) : (
                                 <img src={src} alt="" className="w-full h-full object-cover" />
                               )}
+                              {postType === "carousel" && (
+                                <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <GripVertical className="w-3 h-3 text-white drop-shadow" />
+                                </div>
+                              )}
+                              {/* Media type badge */}
+                              <div className="absolute bottom-1 left-1">
+                                {isVideo
+                                  ? <Film className="w-3 h-3 text-white drop-shadow" />
+                                  : <ImageIcon className="w-3 h-3 text-white drop-shadow" />
+                                }
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => removeMedia(idx)}
@@ -375,13 +440,19 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                               >
                                 <X className="w-3 h-3 text-white" />
                               </button>
+                              {/* Position number for carousel */}
+                              {postType === "carousel" && (
+                                <div className="absolute bottom-1 right-1 w-4 h-4 bg-black/60 rounded-full flex items-center justify-center">
+                                  <span className="text-white text-[9px] font-bold">{idx + 1}</span>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
                       </div>
                     )}
 
-                    {/* Upload progress overlay */}
+                    {/* Upload progress */}
                     {uploading && (
                       <div className="flex flex-col gap-2 p-4 border-2 border-dashed border-primary/30 rounded-xl bg-primary/5">
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -395,16 +466,14 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                             style={{ width: `${uploadProgress}%` }}
                           />
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          Aguarde o upload terminar para continuar.
-                        </p>
+                        <p className="text-xs text-muted-foreground">Aguarde o upload terminar para continuar.</p>
                       </div>
                     )}
 
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept={postType === "reel" ? "video/*" : "image/*,video/*"}
+                      accept={getAccept(postType)}
                       multiple={postType === "carousel"}
                       className="hidden"
                       onChange={handleFileChange}
@@ -423,8 +492,11 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                             : postType === "story"
                             ? "Selecionar imagem ou vídeo"
                             : postType === "carousel"
-                            ? "Adicionar imagens/vídeos"
+                            ? `Adicionar mídia (${uploadedMedia.length}/10)`
                             : "Selecionar mídia"}
+                        </span>
+                        <span className="text-xs text-muted-foreground/70">
+                          {postType === "reel" ? "MP4, MOV, AVI" : "JPG, PNG, GIF, MP4, MOV"}
                         </span>
                       </button>
                     )}
@@ -439,7 +511,6 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                           opcional · JPG ou PNG · máx. {MAX_SIZE_MB}MB
                         </span>
                       </Label>
-
                       {coverPreview ? (
                         <div className="flex items-center gap-3">
                           <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-border group">
@@ -452,18 +523,19 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                               <X className="w-3 h-3 text-white" />
                             </button>
                           </div>
-                          {uploadingCover && (
+                          {uploadingCover ? (
                             <div className="flex-1 flex flex-col gap-1">
                               <div className="flex justify-between text-xs text-muted-foreground">
-                                <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Enviando capa...</span>
+                                <span className="flex items-center gap-1">
+                                  <Loader2 className="w-3 h-3 animate-spin" /> Enviando capa...
+                                </span>
                                 <span>{coverProgress}%</span>
                               </div>
                               <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
                                 <div className="h-full bg-primary transition-all rounded-full" style={{ width: `${coverProgress}%` }} />
                               </div>
                             </div>
-                          )}
-                          {!uploadingCover && uploadedCover && (
+                          ) : (
                             <span className="text-xs text-muted-foreground">Capa pronta</span>
                           )}
                         </div>
@@ -477,14 +549,7 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                           Escolher imagem de capa
                         </button>
                       )}
-
-                      <input
-                        ref={coverInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleCoverChange}
-                      />
+                      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
                     </div>
                   )}
 
@@ -529,7 +594,7 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                       </TabsList>
                       <TabsContent value="now">
                         <p className="text-sm text-muted-foreground mt-2">
-                          O post será publicado imediatamente após a confirmação.
+                          O modal será fechado imediatamente e a publicação ocorre em segundo plano.
                         </p>
                       </TabsContent>
                       <TabsContent value="scheduled" className="mt-3">
@@ -577,7 +642,7 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
             ) : submitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                {scheduleType === "now" ? "Publicando..." : "Agendando..."}
+                Agendando...
               </>
             ) : scheduleType === "now" ? (
               <>
