@@ -126,34 +126,20 @@ async function processQueue() {
     const maxReached = (item.attempts) >= item.max_attempts
 
     if (errors.length === 0) {
-      // All targets published successfully
-      await sql`UPDATE post_queue SET status = 'published' WHERE id = ${item.queue_id}`
-      await sql`
-        UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW()
-        WHERE id = ${item.post_id}
-      `
+      // All targets published successfully — use 'done' (constraint only allows pending/processing/done/failed)
+      await sql`UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${item.queue_id}`
+      await sql`UPDATE posts SET status = 'published', updated_at = NOW() WHERE id = ${item.post_id}`
     } else if (allFailed && maxReached) {
       // All targets failed and no more retries
       await sql`UPDATE post_queue SET status = 'failed', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}`
-      await sql`
-        UPDATE posts
-        SET status = 'failed', error_message = ${errors.join("; ")}, updated_at = NOW()
-        WHERE id = ${item.post_id}
-      `
+      await sql`UPDATE posts SET status = 'failed', error_message = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.post_id}`
     } else if (allFailed) {
-      // Retry later — reset to pending, cron will pick it up again
-      await sql`
-        UPDATE post_queue
-        SET status = 'pending', last_error = ${errors.join("; ")}, updated_at = NOW()
-        WHERE id = ${item.queue_id}
-      `
+      // Retry later — reset to pending, cron will pick it up in next run
+      await sql`UPDATE post_queue SET status = 'pending', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}`
     } else {
-      // Some targets succeeded — mark post as published
-      await sql`UPDATE post_queue SET status = 'published' WHERE id = ${item.queue_id}`
-      await sql`
-        UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW()
-        WHERE id = ${item.post_id}
-      `
+      // Partial success — some targets published, mark as done
+      await sql`UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${item.queue_id}`
+      await sql`UPDATE posts SET status = 'published', updated_at = NOW() WHERE id = ${item.post_id}`
     }
 
     results.push({
