@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useRouter, useSearchParams, useParams } from "next/navigation"
-import { CheckCircle2, XCircle, Loader2, Instagram } from "lucide-react"
+import { CheckCircle2, XCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export default function ConnectingInstagramPage() {
@@ -10,49 +10,22 @@ export default function ConnectingInstagramPage() {
   const searchParams = useSearchParams()
   const { workspaceId } = useParams<{ workspaceId: string }>()
 
-  const code = searchParams.get("code")
-  const redirectUri = searchParams.get("redirectUri")
+  const success = searchParams.get("success")
+  const error = searchParams.get("error")
+  const username = searchParams.get("username")
 
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
-  const [message, setMessage] = useState("")
-  const [accounts, setAccounts] = useState<string[]>([])
-
+  // Se veio do callback com sucesso, redirecionar para accounts após 2.5s
   useEffect(() => {
-    if (!code || !workspaceId) {
-      setStatus("error")
-      setMessage("Parâmetros inválidos.")
-      return
+    if (success === "1") {
+      const timer = setTimeout(() => {
+        router.push(`/workspace/${workspaceId}/accounts`)
+      }, 2500)
+      return () => clearTimeout(timer)
     }
+  }, [success, workspaceId, router])
 
-    const process = async () => {
-      try {
-        const res = await fetch("/api/social/instagram/process", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, workspaceId, redirectUri }),
-        })
-        const data = await res.json()
-
-        if (!res.ok || data.error) {
-          setStatus("error")
-          setMessage(data.error || "Erro ao conectar conta.")
-          return
-        }
-
-        setStatus("success")
-        setAccounts(data.accounts || [])
-        setMessage(`${data.saved} conta(s) conectada(s) com sucesso.`)
-        setTimeout(() => {
-          router.push(`/workspace/${workspaceId}/accounts`)
-        }, 2500)
-      } catch (err: any) {
-        setStatus("error")
-        setMessage(err.message || "Erro inesperado.")
-      }
-    }
-
-    process()
-  }, [code, workspaceId, redirectUri, router])
+  const status = success === "1" ? "success" : error ? "error" : "loading"
+  const errorMessage = error ? decodeURIComponent(error) : ""
 
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -76,8 +49,8 @@ export default function ConnectingInstagramPage() {
             </div>
             <div className="text-center">
               <p className="font-semibold text-foreground">Conectado com sucesso!</p>
-              {accounts.length > 0 && (
-                <p className="text-sm text-muted-foreground mt-1">{accounts.join(", ")}</p>
+              {username && (
+                <p className="text-sm text-muted-foreground mt-1">@{username}</p>
               )}
               <p className="text-xs text-muted-foreground mt-2">Redirecionando...</p>
             </div>
@@ -91,10 +64,9 @@ export default function ConnectingInstagramPage() {
             </div>
             <div className="text-center">
               <p className="font-semibold text-foreground">Falha na conexão</p>
-              <p className="text-sm text-muted-foreground mt-1">Erro ao conectar conta Instagram.</p>
-              {message && (
+              {errorMessage && (
                 <pre className="mt-3 text-xs bg-destructive/5 text-destructive p-3 rounded-lg text-left whitespace-pre-wrap break-all max-h-40 overflow-auto">
-                  {message}
+                  {errorMessage}
                 </pre>
               )}
             </div>
@@ -108,7 +80,7 @@ export default function ConnectingInstagramPage() {
               </Button>
               <Button
                 className="flex-1"
-                onClick={() => router.push(`/workspace/${workspaceId}/accounts`)}
+                onClick={() => router.push(`/api/social/instagram/authorize?workspaceId=${workspaceId}`)}
               >
                 Tentar novamente
               </Button>
