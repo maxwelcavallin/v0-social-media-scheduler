@@ -16,12 +16,9 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  // Always use the canonical production domain for redirect_uri
-  // This URI must be registered exactly in Meta for Developers → Instagram app → OAuth settings
   const host = request.headers.get("host") ?? ""
-  const protocol = host.startsWith("localhost") ? "http" : "https"
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? `${protocol}://${host}`
-  const redirectUri = `${baseUrl}/api/social/instagram/callback`
+  const protocol = host.includes("localhost") ? "http" : "https"
+  const redirectUri = `${protocol}://${host}/api/social/instagram/callback`
 
   const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri })).toString("base64")
 
