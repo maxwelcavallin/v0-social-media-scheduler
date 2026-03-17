@@ -58,24 +58,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const shortToken = tokenData.access_token
-    const igUserId = tokenData.user_id?.toString()
+    // The Business Login API returns: { "data": [{ "access_token": "...", "user_id": "..." }] }
+    // OR flat: { "access_token": "...", "user_id": "..." } depending on version
+    const tokenEntry = Array.isArray(tokenData.data) ? tokenData.data[0] : tokenData
+    const shortToken = tokenEntry?.access_token
+    const igUserId = tokenEntry?.user_id?.toString()
 
     if (!shortToken || !igUserId) {
       return NextResponse.json(
-        { error: `Token ou user_id ausente na resposta: ${JSON.stringify(tokenData)}` },
+        { error: `Token ou user_id ausente. Resposta: ${JSON.stringify(tokenData)}` },
         { status: 400 }
       )
     }
 
     // Step 2: Exchange short-lived token for long-lived token (60 days)
-    // Correct URL: https://graph.instagram.com/access_token (NO /v22.0/ prefix)
+    // GET https://graph.instagram.com/access_token (sem /v22.0/)
     const longLivedUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
     const longRes = await fetch(longLivedUrl)
     const longData = await longRes.json()
 
     if (!longRes.ok || longData.error) {
-      // Log exact error from Step 2 to help diagnose
       const errDetail = longData.error
         ? `${longData.error.message} [tipo: ${longData.error.type}, código: ${longData.error.code}]`
         : `HTTP ${longRes.status}`
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const accessToken = longData.access_token
+    const accessToken = longData.access_token || shortToken
 
     // Step 3: Fetch profile — only proceed if Step 2 succeeded with a valid token
     // URL: https://graph.instagram.com/v22.0/me?fields=id,username&access_token=...
