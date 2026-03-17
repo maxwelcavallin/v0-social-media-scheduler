@@ -68,26 +68,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 2: Exchange short-lived token for long-lived token via GET
-    // Instagram long-lived token exchange REQUIRES GET, not POST
-    const longParams = new URLSearchParams({
-      grant_type: "ig_exchange_token",
-      client_secret: appSecret,
-      access_token: shortToken,
-    })
-    const longRes = await fetch(`${IG_GRAPH}/access_token?${longParams.toString()}`)
-    const longData = await longRes.json()
+    // The Instagram Business Login API (api.instagram.com/oauth) already returns
+    // a long-lived token in Step 1 — no need to exchange again.
+    const longToken = shortToken
 
-    if (longData.error) {
-      return NextResponse.json(
-        { error: `Erro ao obter token longo: ${longData.error.message}` },
-        { status: 400 }
-      )
-    }
-
-    const longToken = longData.access_token || shortToken
-
-    // Step 3: Get Instagram user profile — new API uses user_id from token response
+    // Step 2: Get Instagram user profile via Instagram Graph API
     const meRes = await fetch(
       `${IG_GRAPH}/${igUserId}?fields=id,name,username,profile_picture_url&access_token=${longToken}`
     )
