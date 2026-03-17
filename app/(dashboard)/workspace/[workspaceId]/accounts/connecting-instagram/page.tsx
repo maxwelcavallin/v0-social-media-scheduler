@@ -71,11 +71,11 @@ export default function ConnectingInstagramPage() {
 
         {status === "success" && (
           <>
-            <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center">
-              <CheckCircle2 className="w-7 h-7 text-success" />
+            <div className="w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <CheckCircle2 className="w-7 h-7 text-green-600 dark:text-green-400" />
             </div>
             <div className="text-center">
-              <p className="font-semibold text-foreground">Conectado com sucesso!</p>
+              <p className="font-semibold text-foreground">Instagram conectado com sucesso!</p>
               {accounts.length > 0 && (
                 <p className="text-sm text-muted-foreground mt-1">{accounts.join(", ")}</p>
               )}
@@ -90,12 +90,9 @@ export default function ConnectingInstagramPage() {
               <XCircle className="w-7 h-7 text-destructive" />
             </div>
             <div className="text-center">
-              <p className="font-semibold text-foreground">Falha na conexão</p>
-              <p className="text-sm text-muted-foreground mt-1">Erro ao conectar conta Instagram.</p>
+              <p className="font-semibold text-foreground">Não foi possível conectar</p>
               {message && (
-                <pre className="mt-3 text-xs bg-destructive/5 text-destructive p-3 rounded-lg text-left whitespace-pre-wrap break-all max-h-40 overflow-auto">
-                  {message}
-                </pre>
+                <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{message}</p>
               )}
             </div>
             <div className="flex gap-2 w-full">
