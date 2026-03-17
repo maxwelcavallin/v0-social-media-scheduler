@@ -97,46 +97,7 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, try Business Manager
-    // NOTE: /me/businesses does NOT support nested fields — must make separate calls
-    if (pages.length === 0) {
-      const bizRes = await fetch(
-        `${GRAPH_API}/me/businesses?access_token=${userToken}&limit=10`
-      )
-      const bizData = await bizRes.json()
-
-      if (bizData.data && bizData.data.length > 0) {
-        for (const biz of bizData.data) {
-          // 4a: Owned pages
-          const ownedRes = await fetch(
-            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-          )
-          const ownedData = await ownedRes.json()
-          if (ownedData.data?.length > 0) {
-            for (const p of ownedData.data) {
-              const ptRes = await fetch(`${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`)
-              const ptData = await ptRes.json()
-              pages.push({ ...p, access_token: ptData.access_token || userToken })
-            }
-          }
-
-          // 4b: Client pages (pages managed on behalf of clients)
-          const clientRes = await fetch(
-            `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-          )
-          const clientData = await clientRes.json()
-          if (clientData.data?.length > 0) {
-            for (const p of clientData.data) {
-              const ptRes = await fetch(`${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`)
-              const ptData = await ptRes.json()
-              pages.push({ ...p, access_token: ptData.access_token || userToken })
-            }
-          }
-        }
-      }
-    }
-
-    // Step 5: If still empty, show debug info
+    // Step 4: If still empty, show debug info
     if (pages.length === 0) {
       const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
       const meData = await meRes.json()
@@ -148,7 +109,7 @@ export async function POST(request: NextRequest) {
         .join(", ")
 
       return NextResponse.json({
-        error: `Nenhuma Página encontrada. Usuário: ${meData.name} (${meData.id}). Permissões concedidas: ${grantedPerms || "nenhuma"}. Se suas páginas estão no Business Manager, certifique-se de que o app tem acesso à sua Business.`,
+        error: `Nenhuma Página do Facebook encontrada para o usuário ${meData.name}. Certifique-se de que você é administrador de pelo menos uma Página do Facebook e que concedeu todas as permissões solicitadas.`,
       }, { status: 400 })
     }
 
