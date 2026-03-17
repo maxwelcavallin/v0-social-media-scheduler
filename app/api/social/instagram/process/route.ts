@@ -68,19 +68,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // The Instagram Business Login API (api.instagram.com/oauth) already returns
-    // a long-lived token in Step 1 — no need to exchange again.
-    const longToken = shortToken
+    // Step 2: Exchange short-lived token for long-lived token
+    // Instagram Business Login short-lived tokens last ~1h; exchange for 60-day token
+    const longParams = new URLSearchParams({
+      grant_type: "ig_exchange_token",
+      client_secret: appSecret,
+      access_token: shortToken,
+    })
+    const longRes = await fetch(`${IG_GRAPH}/access_token?${longParams.toString()}`)
+    const longData = await longRes.json()
+    // Use long-lived token if exchange succeeded, otherwise keep short-lived
+    const longToken = longData.access_token || shortToken
 
-    // Step 2: Get Instagram user profile via Instagram Graph API
+    // Step 3: Get Instagram user profile via /me endpoint (not by user ID)
+    // Only fields available without app review: id, name, username, account_type
     const meRes = await fetch(
-      `${IG_GRAPH}/${igUserId}?fields=id,name,username,profile_picture_url&access_token=${longToken}`
+      `${IG_GRAPH}/me?fields=id,name,username,account_type&access_token=${longToken}`
     )
     const meData = await meRes.json()
 
     if (meData.error) {
       return NextResponse.json(
-        { error: `Erro ao buscar perfil Instagram: ${meData.error.message}` },
+        { error: `Erro ao buscar perfil Instagram: ${meData.error.message} [código ${meData.error.code}]` },
         { status: 400 }
       )
     }
@@ -88,7 +97,7 @@ export async function POST(request: NextRequest) {
     const accountId = meData.id || igUserId
     const accountName = meData.name || meData.username || "Instagram"
     const accountUsername = meData.username || null
-    const profilePicture = meData.profile_picture_url || null
+    const profilePicture = null // profile_picture_url requires app review
 
     // Step 4: Save to social_accounts
     await sql`
