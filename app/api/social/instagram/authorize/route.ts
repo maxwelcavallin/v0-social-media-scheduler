@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
-// "Conectar Instagram" usa o mesmo Facebook OAuth por baixo dos panos.
-// O usuário vê apenas o Instagram — a complexidade do Facebook fica oculta.
+// Conectar Instagram diretamente via Instagram OAuth nativo (api.instagram.com)
+// Funciona para qualquer conta: pessoal, criador de conteúdo ou empresarial
+// NÃO requer vinculação com página do Facebook ou Business Suite
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const workspaceId = searchParams.get("workspaceId")
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "workspaceId obrigatório" }, { status: 400 })
   }
 
-  const appId = process.env.FACEBOOK_APP_ID
+  const appId = process.env.INSTAGRAM_APP_ID
   if (!appId) {
     return NextResponse.json({ error: "Configuração interna ausente." }, { status: 500 })
   }
@@ -24,18 +25,12 @@ export async function GET(request: NextRequest) {
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
-    scope: [
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_posts",
-      "instagram_basic",
-      "instagram_content_publish",
-    ].join(","),
+    scope: "instagram_business_basic,instagram_business_content_publish",
     response_type: "code",
     state,
   })
 
   return NextResponse.redirect(
-    `https://www.facebook.com/v22.0/dialog/oauth?${params.toString()}`
+    `https://api.instagram.com/oauth/authorize?${params.toString()}`
   )
 }
