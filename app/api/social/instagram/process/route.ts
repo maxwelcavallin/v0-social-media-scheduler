@@ -6,8 +6,8 @@ import sql from "@/lib/db"
 const GRAPH = "https://graph.facebook.com/v22.0"
 // Instagram OAuth API (code exchange — different from Facebook)
 const IG_OAUTH = "https://api.instagram.com/oauth/access_token"
-// Instagram Graph (for user info after token exchange)
-const IG_GRAPH = "https://graph.instagram.com/v22.0"
+// Instagram Graph API does NOT support version prefixes like graph.facebook.com does
+const IG_GRAPH = "https://graph.instagram.com"
 
 export async function POST(request: NextRequest) {
   const session = await getSession()
