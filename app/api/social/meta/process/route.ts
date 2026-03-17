@@ -97,34 +97,7 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, try Business Manager pages
-    if (pages.length === 0) {
-      const bizRes = await fetch(
-        `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
-      )
-      const bizData = await bizRes.json()
-
-      if (bizData.data && bizData.data.length > 0) {
-        for (const biz of bizData.data) {
-          if (biz.owned_pages?.data?.length > 0) {
-            // For Business Manager pages, get a page token via token exchange
-            for (const p of biz.owned_pages.data) {
-              // Get a proper page access token
-              const pageTokenRes = await fetch(
-                `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
-              )
-              const pageTokenData = await pageTokenRes.json()
-              pages.push({
-                ...p,
-                access_token: pageTokenData.access_token || userToken,
-              })
-            }
-          }
-        }
-      }
-    }
-
-    // Step 5: If still empty, show debug info
+    // Step 4: If still empty, show debug info
     if (pages.length === 0) {
       const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
       const meData = await meRes.json()
@@ -140,7 +113,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Step 6: Save pages and linked Instagram accounts
+    // Step 5: Save pages and linked Instagram accounts
     const saved: { platform: string; name: string }[] = []
 
     for (const page of pages) {
