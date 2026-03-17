@@ -32,6 +32,8 @@ import {
   GripVertical,
   BookmarkIcon,
   CheckCircle2,
+  Plus,
+  Trash2,
 } from "lucide-react"
 import { upload } from "@vercel/blob/client"
 import { cn } from "@/lib/utils"
@@ -139,6 +141,14 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   const accountIds = watch("accountIds") || []
   const postType = watch("postType")
 
+  // Multiple scheduled dates support
+  const [scheduledDates, setScheduledDates] = useState<string[]>([""])
+
+  const addScheduledDate = () => setScheduledDates((prev) => [...prev, ""])
+  const removeScheduledDate = (idx: number) => setScheduledDates((prev) => prev.filter((_, i) => i !== idx))
+  const updateScheduledDate = (idx: number, value: string) =>
+    setScheduledDates((prev) => prev.map((d, i) => (i === idx ? value : d)))
+
   // ── Drag-and-drop reorder (carousel) ──────────────────────────────────────
   const handleDragStart = (idx: number) => { dragIndex.current = idx }
 
@@ -244,6 +254,7 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     setUploadedCover(null)
     setError(null)
     setCharCount(0)
+    setScheduledDates([""])
   }
 
   const handleClose = (v: boolean) => {
@@ -261,12 +272,10 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     setSubmitting(true)
     setError(null)
 
-    const payload = {
+    const basePayload = {
       workspaceId,
       content: data.content || "",
       postType: data.postType,
-      scheduleType: data.scheduleType,
-      scheduledAt: data.scheduledAt,
       accountIds: data.accountIds,
       media: uploadedMedia,
       coverMedia: uploadedCover || undefined,
@@ -276,13 +285,11 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     if (data.scheduleType === "now") {
       setPublishingSuccess(true)
       setSubmitting(false)
-      // Fire-and-forget in background
       fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...basePayload, scheduleType: "now" }),
       }).then(() => router.refresh()).catch(() => router.refresh())
-      // Auto-close after 3s
       setTimeout(() => {
         setPublishingSuccess(false)
         setOpen(false)
@@ -291,16 +298,27 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
       return
     }
 
-    // For scheduled posts: wait for confirmation before closing
+    // For scheduled posts: one request per date
+    const validDates = scheduledDates.filter((d) => d.trim() !== "")
+    if (validDates.length === 0) {
+      setError("Informe ao menos uma data de agendamento.")
+      setSubmitting(false)
+      return
+    }
+
     try {
-      const res = await fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        setError(json.error || "Erro ao agendar post")
+      const results = await Promise.all(
+        validDates.map((date) =>
+          fetch("/api/posts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...basePayload, scheduleType: "scheduled", scheduledAt: date }),
+          }).then((r) => r.json().then((json) => ({ ok: r.ok, json })))
+        )
+      )
+      const failed = results.filter((r) => !r.ok)
+      if (failed.length > 0) {
+        setError(failed.map((f) => f.json.error || "Erro ao agendar").join("; "))
         return
       }
       setOpen(false)
@@ -673,16 +691,46 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                         </p>
                       </TabsContent>
                       <TabsContent value="scheduled" className="mt-3">
-                        <div className="flex flex-col gap-1.5">
-                          <Label htmlFor="scheduledAt">Data e hora (horário de Brasília)</Label>
-                          <Input
-                            id="scheduledAt"
-                            type="datetime-local"
-                            min={minDateStr}
-                            {...register("scheduledAt")}
-                          />
-                          {errors.scheduledAt && (
-                            <span className="text-xs text-destructive">{errors.scheduledAt.message}</span>
+                        <div className="flex flex-col gap-2">
+                          <Label>Data e hora (horário de Brasília)</Label>
+                          <div className="flex flex-col gap-2">
+                            {scheduledDates.map((date, idx) => (
+                              <div key={idx} className="flex items-center gap-2">
+                                <Input
+                                  type="datetime-local"
+                                  min={minDateStr}
+                                  value={date}
+                                  onChange={(e) => updateScheduledDate(idx, e.target.value)}
+                                  className="flex-1"
+                                />
+                                {scheduledDates.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeScheduledDate(idx)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-fit gap-1.5 mt-1"
+                            onClick={addScheduledDate}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Adicionar data
+                          </Button>
+                          {scheduledDates.length > 1 && (
+                            <p className="text-xs text-muted-foreground">
+                              Serão criados {scheduledDates.filter(d => d).length} agendamentos para este post.
+                            </p>
                           )}
                         </div>
                       </TabsContent>
@@ -744,7 +792,9 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
               ) : (
                 <>
                   <CalendarDays className="w-4 h-4" />
-                  Agendar
+                  {scheduledDates.filter(d => d).length > 1
+                    ? `Agendar ${scheduledDates.filter(d => d).length}x`
+                    : "Agendar"}
                 </>
               )}
             </Button>
