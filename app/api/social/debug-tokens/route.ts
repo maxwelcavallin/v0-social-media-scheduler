@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { cookies } from "next/headers"
+import { verifySessionToken } from "@/lib/auth"
 
 // Temporary debug endpoint — REMOVE AFTER APP REVIEW
 export async function GET() {
-  const session = await getServerSession(authOptions)
+  const cookieStore = await cookies()
+  const token = cookieStore.get("session")?.value
+  const session = token ? await verifySessionToken(token) : null
   if (!session) return NextResponse.json({ error: "Não autenticado" }, { status: 401 })
 
   const sql = neon(process.env.DATABASE_URL!)
