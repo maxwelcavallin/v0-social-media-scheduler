@@ -68,36 +68,39 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 2: Exchange short-lived token for long-lived token
-    // Instagram Business Login short-lived tokens last ~1h; exchange for 60-day token
-    const longParams = new URLSearchParams({
-      grant_type: "ig_exchange_token",
-      client_secret: appSecret,
-      access_token: shortToken,
-    })
-    const longRes = await fetch(`${IG_GRAPH}/access_token?${longParams.toString()}`)
+    // Step 2: Exchange for long-lived token via graph.facebook.com (Instagram Business Login uses FB graph)
+    const longRes = await fetch(
+      `${GRAPH}/oauth/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
+    )
     const longData = await longRes.json()
-    // Use long-lived token if exchange succeeded, otherwise keep short-lived
     const longToken = longData.access_token || shortToken
 
-    // Step 3: Get Instagram user profile via /me endpoint (not by user ID)
-    // Only fields available without app review: id, name, username, account_type
+    // Step 3: Get Instagram profile via igUserId on graph.facebook.com
+    // The new Instagram Business Login returns user_id from token exchange — use it directly
     const meRes = await fetch(
-      `${IG_GRAPH}/me?fields=id,name,username,account_type&access_token=${longToken}`
+      `${GRAPH}/${igUserId}?fields=id,name,username&access_token=${longToken}`
     )
     const meData = await meRes.json()
 
     if (meData.error) {
-      return NextResponse.json(
-        { error: `Erro ao buscar perfil Instagram: ${meData.error.message} [código ${meData.error.code}]` },
-        { status: 400 }
+      // Fallback: try fetching via /me on graph.facebook.com
+      const meFallback = await fetch(
+        `${GRAPH}/me?fields=id,name&access_token=${longToken}`
       )
+      const meFallbackData = await meFallback.json()
+      if (meFallbackData.error) {
+        return NextResponse.json(
+          { error: `Erro ao buscar perfil: ${meFallbackData.error.message} [código ${meFallbackData.error.code}]` },
+          { status: 400 }
+        )
+      }
+      Object.assign(meData, meFallbackData)
     }
 
     const accountId = meData.id || igUserId
-    const accountName = meData.name || meData.username || "Instagram"
+    const accountName = meData.name || meData.username || `Instagram ${igUserId}`
     const accountUsername = meData.username || null
-    const profilePicture = null // profile_picture_url requires app review
+    const profilePicture = null
 
     // Step 4: Save to social_accounts
     await sql`
