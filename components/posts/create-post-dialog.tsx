@@ -31,6 +31,7 @@ import {
   Film,
   GripVertical,
   BookmarkIcon,
+  CheckCircle2,
 } from "lucide-react"
 import { upload } from "@vercel/blob/client"
 import { cn } from "@/lib/utils"
@@ -271,17 +272,22 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
       coverMedia: uploadedCover || undefined,
     }
 
-    // For "now" posts: close modal immediately and publish in background
+    // For "now" posts: show success screen then close, publish in background
     if (data.scheduleType === "now") {
-      setOpen(false)
-      resetForm()
+      setPublishingSuccess(true)
       setSubmitting(false)
-      // Fire-and-forget — router.refresh() after completion to update UI
+      // Fire-and-forget in background
       fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       }).then(() => router.refresh()).catch(() => router.refresh())
+      // Auto-close after 3s
+      setTimeout(() => {
+        setPublishingSuccess(false)
+        setOpen(false)
+        resetForm()
+      }, 3000)
       return
     }
 
@@ -322,6 +328,8 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
 
   const isUploading = uploading || uploadingCover
   const canSubmit = !isUploading && !submitting && accounts.length > 0
+
+  const [publishingSuccess, setPublishingSuccess] = useState(false)
 
   // ── Save as draft — no accounts required, no publishing ───────────────────
   const [savingDraft, setSavingDraft] = useState(false)
@@ -368,6 +376,31 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
     <Dialog open={open} onOpenChange={handleClose}>
       {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
+        {publishingSuccess ? (
+          <div className="flex flex-col items-center justify-center gap-6 py-16 px-8 text-center">
+            <div className="flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30">
+              <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xl font-semibold">Publicando em segundo plano</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Seu post está sendo publicado nas contas selecionadas. Você pode continuar usando o sistema normalmente.
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">Esta janela fechará automaticamente em instantes.</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPublishingSuccess(false)
+                setOpen(false)
+                resetForm()
+              }}
+            >
+              Fechar agora
+            </Button>
+          </div>
+        ) : (
+        <>
         <DialogHeader className="px-6 pt-6 pb-0">
           <DialogTitle>Criar novo post</DialogTitle>
         </DialogHeader>
@@ -717,6 +750,8 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
             </Button>
           </div>
         </div>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   )
