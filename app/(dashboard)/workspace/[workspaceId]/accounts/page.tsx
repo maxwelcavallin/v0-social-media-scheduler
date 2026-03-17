@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/dashboard/empty-state"
 import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
 import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-button"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
+import { AccountAvatar } from "@/components/accounts/account-avatar"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -151,21 +152,11 @@ function AccountCard({ account, config }: { account: any; config: any }) {
       <CardContent className="py-3 px-4">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-full ${config.colorClass} flex items-center justify-center shrink-0`}>
-            {account.profile_picture_url ? (
-              <img
-                src={account.profile_picture_url}
-                alt={account.account_name}
-                className="w-10 h-10 rounded-full object-cover"
-                onError={(e) => {
-                  // Hide broken image and show platform icon fallback
-                  ;(e.target as HTMLImageElement).style.display = "none"
-                  ;(e.target as HTMLImageElement).nextElementSibling?.removeAttribute("hidden")
-                }}
-              />
-            ) : null}
-            <span hidden={!!account.profile_picture_url}>
-              {config.icon}
-            </span>
+            <AccountAvatar
+              src={account.profile_picture_url}
+              alt={account.account_name}
+              fallback={config.icon}
+            />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
