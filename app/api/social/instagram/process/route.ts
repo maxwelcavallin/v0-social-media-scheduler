@@ -68,16 +68,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 2: Exchange short-lived token for long-lived token (valid 60 days)
-    const longRes = await fetch(
-      `${IG_GRAPH}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
-    )
+    // Step 2: Exchange short-lived token for long-lived token via POST
+    const longBody = new URLSearchParams({
+      grant_type: "ig_exchange_token",
+      client_secret: appSecret,
+      access_token: shortToken,
+    })
+    const longRes = await fetch(`${IG_GRAPH}/access_token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: longBody.toString(),
+    })
     const longData = await longRes.json()
+
+    if (longData.error) {
+      return NextResponse.json(
+        { error: `Erro ao obter token longo: ${longData.error.message}` },
+        { status: 400 }
+      )
+    }
+
     const longToken = longData.access_token || shortToken
 
-    // Step 3: Get Instagram user profile
+    // Step 3: Get Instagram user profile — new API uses user_id from token response
     const meRes = await fetch(
-      `${IG_GRAPH}/me?fields=id,name,username,profile_picture_url&access_token=${longToken}`
+      `${IG_GRAPH}/${igUserId}?fields=id,name,username,profile_picture_url&access_token=${longToken}`
     )
     const meData = await meRes.json()
 
