@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
   }
 
   // redirect_uri deve ser exatamente o cadastrado no painel Meta para o INSTAGRAM_APP_ID
-  const redirectUri = "https://social.list.dog/api/social/instagram/callback"
+  // O Meta exige que seja idêntico ao cadastrado — usar a URL raiz conforme configurado no app
+  const redirectUri = "https://social.list.dog/"
 
   const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri })).toString("base64")
 

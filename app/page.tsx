@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
@@ -13,7 +14,39 @@ import {
   CheckCircle2,
 } from "lucide-react"
 
-export default function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string; state?: string; error?: string }>
+}) {
+  const params = await searchParams
+
+  // Captura callback do Instagram OAuth (redirect_uri = https://social.list.dog/)
+  if (params.code && params.state) {
+    let workspaceId = ""
+    try {
+      const decoded = JSON.parse(atob(params.state))
+      workspaceId = decoded.workspaceId || ""
+    } catch {
+      workspaceId = params.state
+    }
+
+    if (workspaceId) {
+      const processingUrl = new URL(
+        `/workspace/${workspaceId}/accounts/connecting-instagram`,
+        "https://social.list.dog"
+      )
+      processingUrl.searchParams.set("code", params.code)
+      processingUrl.searchParams.set("redirectUri", "https://social.list.dog/")
+      redirect(processingUrl.pathname + processingUrl.search)
+    }
+  }
+
+  if (params.error) {
+    redirect("/login")
+  }
+
+  return (
   return (
     <div className="min-h-screen bg-background font-sans">
       {/* Header */}
