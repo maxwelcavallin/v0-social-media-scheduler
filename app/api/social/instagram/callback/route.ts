@@ -14,25 +14,16 @@ export async function GET(request: NextRequest) {
 
   let workspaceId = ""
 
-  console.log("[v0] callback - rawState:", rawState)
-  console.log("[v0] callback - code present:", !!code)
-  console.log("[v0] callback - error:", error)
-
   try {
     const decoded = JSON.parse(atob(rawState || ""))
     workspaceId = decoded.workspaceId || ""
-    console.log("[v0] callback - decoded state:", JSON.stringify(decoded))
-  } catch (e) {
+  } catch {
     workspaceId = rawState || ""
-    console.log("[v0] callback - state parse failed, using raw:", workspaceId)
   }
-
-  console.log("[v0] callback - workspaceId:", workspaceId)
 
   const accountsUrl = new URL(`/workspace/${workspaceId}/accounts`, request.url)
 
   if (error || !code || !workspaceId) {
-    console.log("[v0] callback - early redirect: error=", error, "code=", !!code, "workspaceId=", workspaceId)
     accountsUrl.searchParams.set("ig_error", error || "missing_params")
     return NextResponse.redirect(accountsUrl)
   }
