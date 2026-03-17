@@ -37,8 +37,9 @@ async function processQueue() {
       pq.max_attempts,
       p.content,
       p.workspace_id,
-      ARRAY_AGG(pm.url   ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) AS media_urls,
-      ARRAY_AGG(pm.media_type ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL) AS media_types
+      ARRAY_AGG(pm.url        ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL AND pm.order_index >= 0) AS media_urls,
+      ARRAY_AGG(pm.media_type ORDER BY pm.order_index) FILTER (WHERE pm.id IS NOT NULL AND pm.order_index >= 0) AS media_types,
+      MAX(pm.url) FILTER (WHERE pm.order_index = -1) AS cover_url
     FROM post_queue pq
     JOIN posts p ON p.id = pq.post_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
@@ -46,6 +47,7 @@ async function processQueue() {
       AND pq.scheduled_at <= NOW()
       AND pq.attempts < pq.max_attempts
     GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts, p.content, p.workspace_id
+    -- cover_url is derived from MAX aggregate, no need in GROUP BY
     LIMIT 10
   `
 
@@ -101,6 +103,7 @@ async function processQueue() {
             media_urls: item.media_urls,
             media_types: item.media_types,
             post_type: target.post_type,
+            cover_url: item.cover_url ?? null,
           })
         }
 
