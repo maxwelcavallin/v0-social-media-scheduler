@@ -72,23 +72,23 @@ export async function GET(request: NextRequest) {
     )
     const profile = await profileRes.json()
 
-    // Step 4: Salvar no banco
+    // Step 4: Salvar no banco (usar colunas corretas do schema: account_username, não username)
     const sql = neon(process.env.DATABASE_URL!)
     await sql`
       INSERT INTO social_accounts (
         workspace_id, platform, account_id, account_name,
-        username, profile_picture_url, access_token, is_active
+        account_username, profile_picture_url, access_token, is_active, updated_at
       ) VALUES (
         ${workspaceId}, 'instagram', ${igUserId},
         ${profile.name || profile.username || "Instagram"},
         ${profile.username || null},
         ${profile.profile_picture_url || null},
-        ${longToken}, true
+        ${longToken}, true, NOW()
       )
       ON CONFLICT (workspace_id, platform, account_id)
       DO UPDATE SET
         account_name = EXCLUDED.account_name,
-        username = EXCLUDED.username,
+        account_username = EXCLUDED.account_username,
         profile_picture_url = EXCLUDED.profile_picture_url,
         access_token = EXCLUDED.access_token,
         is_active = true,
