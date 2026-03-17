@@ -31,10 +31,11 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, plan: user.plan } })
     const host = request.headers.get("host") || ""
     const isLocalHttp = host.includes("localhost") || host.includes("127.0.0.1")
+    const isPreview = host.includes("vusercontent.net") || host.includes("v0.dev")
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: !isLocalHttp,
-      sameSite: "lax",
+      sameSite: isPreview ? "none" : "lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
     })

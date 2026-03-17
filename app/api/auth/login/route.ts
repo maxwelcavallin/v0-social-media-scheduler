@@ -30,10 +30,13 @@ export async function POST(request: NextRequest) {
     // Only disable secure on explicit localhost (non-HTTPS dev)
     const host = request.headers.get("host") || ""
     const isLocalHttp = host.includes("localhost") || host.includes("127.0.0.1")
+    // v0.dev preview runs inside an iframe — needs sameSite "none" + secure to send cookies cross-frame
+    // Production and localhost use "lax"
+    const isPreview = host.includes("vusercontent.net") || host.includes("v0.dev")
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: !isLocalHttp,
-      sameSite: "lax",
+      sameSite: isPreview ? "none" : "lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
     })
