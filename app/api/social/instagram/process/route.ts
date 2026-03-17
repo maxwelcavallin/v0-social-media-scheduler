@@ -114,13 +114,12 @@ export async function POST(request: NextRequest) {
         (${workspaceId}, 'instagram', ${accountId}, null, ${accountName},
          ${accountUsername}, ${profilePicture}, ${accessToken},
          true, NOW(), NOW(), NOW())
-      ON CONFLICT (platform, account_id)
+      ON CONFLICT (workspace_id, platform, account_id)
       DO UPDATE SET
         account_name        = EXCLUDED.account_name,
         account_username    = EXCLUDED.account_username,
         profile_picture_url = EXCLUDED.profile_picture_url,
         access_token        = EXCLUDED.access_token,
-        workspace_id        = EXCLUDED.workspace_id,
         is_active           = true,
         last_sync_at        = NOW(),
         updated_at          = NOW()
