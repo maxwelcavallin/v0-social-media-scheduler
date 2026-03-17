@@ -100,16 +100,20 @@ export async function POST(request: NextRequest) {
     // Step 4: If still empty, try Business Manager pages
     if (pages.length === 0) {
       const bizRes = await fetch(
-        `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
+        `${GRAPH_API}/me/businesses?access_token=${userToken}&limit=10`
       )
       const bizData = await bizRes.json()
 
       if (bizData.data && bizData.data.length > 0) {
         for (const biz of bizData.data) {
-          if (biz.owned_pages?.data?.length > 0) {
-            // For Business Manager pages, get a page token via token exchange
-            for (const p of biz.owned_pages.data) {
-              // Get a proper page access token
+          const ownedRes = await fetch(
+            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+          )
+          const ownedData = await ownedRes.json()
+
+          if (ownedData.data && ownedData.data.length > 0) {
+            for (const p of ownedData.data) {
+              // Fetch page access token separately
               const pageTokenRes = await fetch(
                 `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
               )
