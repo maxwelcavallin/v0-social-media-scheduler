@@ -156,10 +156,16 @@ function AccountCard({ account, config }: { account: any; config: any }) {
                 src={account.profile_picture_url}
                 alt={account.account_name}
                 className="w-10 h-10 rounded-full object-cover"
+                onError={(e) => {
+                  // Hide broken image and show platform icon fallback
+                  ;(e.target as HTMLImageElement).style.display = "none"
+                  ;(e.target as HTMLImageElement).nextElementSibling?.removeAttribute("hidden")
+                }}
               />
-            ) : (
-              config.icon
-            )}
+            ) : null}
+            <span hidden={!!account.profile_picture_url}>
+              {config.icon}
+            </span>
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">

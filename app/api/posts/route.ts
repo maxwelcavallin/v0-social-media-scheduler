@@ -254,6 +254,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Save reel cover image as media_type = 'cover' with order_index = -1
+    if (coverMedia?.url) {
+      await sql`
+        INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
+        VALUES (gen_random_uuid(), ${postId}, ${coverMedia.url}, 'cover', -1, NOW())
+      `
+    }
+
     // Create post_targets and collect account info for immediate publishing
     const targets: Array<{
       targetId: string
