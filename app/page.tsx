@@ -16,7 +16,6 @@ import {
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-background font-sans">
-      {/* Header */}
       <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -42,7 +41,6 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 py-24 text-center">
         <Badge variant="secondary" className="mb-6 text-primary border-primary/20">
           Plataforma de agendamento social
@@ -66,7 +64,6 @@ export default function HomePage() {
           </Button>
         </div>
 
-        {/* Social platforms */}
         <div className="flex items-center justify-center gap-6 mt-16">
           <div className="flex items-center gap-2 text-muted-foreground">
             <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "oklch(0.92 0.05 15)" }}>
@@ -88,7 +85,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Features */}
       <section id="features" className="bg-muted/40 py-20">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
@@ -145,7 +141,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CTA */}
       <section className="max-w-6xl mx-auto px-6 py-24 text-center">
         <h2 className="text-3xl font-bold text-foreground mb-4 text-balance">
           Pronto para escalar sua agência?
@@ -161,7 +156,6 @@ export default function HomePage() {
         </Button>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-border py-8">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">

@@ -97,16 +97,38 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, show debug info
+    // Step 4: Fallback — buscar via Business Manager (caso a página não seja admin direta no perfil pessoal)
+    if (pages.length === 0) {
+      try {
+        const bizRes = await fetch(`${GRAPH_API}/me/businesses?access_token=${userToken}&limit=25`)
+        const bizData = await bizRes.json()
+
+        if (bizData.data && bizData.data.length > 0) {
+          for (const biz of bizData.data) {
+            // Owned pages
+            const ownedRes = await fetch(
+              `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+            )
+            const ownedData = await ownedRes.json()
+            if (ownedData.data?.length > 0) pages.push(...ownedData.data)
+
+            // Client pages
+            const clientRes = await fetch(
+              `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+            )
+            const clientData = await clientRes.json()
+            if (clientData.data?.length > 0) pages.push(...clientData.data)
+          }
+        }
+      } catch {
+        // Business Manager não disponível — ignorar silenciosamente
+      }
+    }
+
+    // Step 5: Se ainda vazio, retornar erro informativo
     if (pages.length === 0) {
       const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
       const meData = await meRes.json()
-      const permRes = await fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
-      const permData = await permRes.json()
-      const grantedPerms = permData.data
-        ?.filter((p: any) => p.status === "granted")
-        .map((p: any) => p.permission)
-        .join(", ")
 
       return NextResponse.json({
         error: `Nenhuma Página do Facebook encontrada para o usuário ${meData.name}. Certifique-se de que você é administrador de pelo menos uma Página do Facebook e que concedeu todas as permissões solicitadas.`,
