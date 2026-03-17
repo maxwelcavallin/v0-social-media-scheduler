@@ -29,10 +29,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Always derive redirectUri from the actual request host
+  // Must match exactly what was sent in the authorize step
   const host = request.headers.get("host") ?? ""
   const protocol = host.startsWith("localhost") ? "http" : "https"
-  const finalRedirectUri = `${protocol}://${host}/api/social/instagram/callback`
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? `${protocol}://${host}`
+  const finalRedirectUri = `${baseUrl}/api/social/instagram/callback`
 
   try {
     // Step 1: Exchange code for short-lived token via Instagram OAuth endpoint
