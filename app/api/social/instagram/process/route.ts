@@ -2,12 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 
-// Instagram Graph API (long-lived tokens)
-const GRAPH = "https://graph.facebook.com/v22.0"
-// Instagram OAuth API (code exchange — different from Facebook)
+// Instagram OAuth API (code → token exchange)
 const IG_OAUTH = "https://api.instagram.com/oauth/access_token"
-// Instagram Graph API does NOT support version prefixes like graph.facebook.com does
-const IG_GRAPH = "https://graph.instagram.com"
+// Instagram Graph API — Business Login uses versioned endpoint
+const IG_GRAPH = "https://graph.instagram.com/v25.0"
 
 export async function POST(request: NextRequest) {
   const session = await getSession()
@@ -80,45 +78,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── Step 2 (doc Step 3): Exchange short-lived token for long-lived token ──
-    // Per official docs: GET https://graph.instagram.com/access_token
-    //   ?grant_type=ig_exchange_token&client_secret=...&access_token=<short>
-    // This MUST be done BEFORE calling /me — /me rejects short-lived tokens.
-    console.log("[instagram/process] Step 2 — trocando token curto por longo via graph.instagram.com/access_token")
-    const longTokenUrl = `${IG_GRAPH}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
-    const longRes = await fetch(longTokenUrl, { method: "GET" })
-    const longData = await longRes.json()
-    console.log("[instagram/process] Step 2 long-token status:", longRes.status)
-    console.log("[instagram/process] Step 2 long-token resposta:", JSON.stringify(longData))
-
-    if (!longRes.ok || longData.error) {
-      return NextResponse.json(
-        { error: `Erro ao obter token longa duração: ${longData.error?.message} [tipo: ${longData.error?.type}, código: ${longData.error?.code}]` },
-        { status: 400 }
-      )
-    }
-
-    const accessToken = longData.access_token
-
-    // ── Step 3: Fetch profile using the long-lived token via graph.instagram.com/me ──
-    // /me works ONLY with long-lived tokens on graph.instagram.com
-    console.log("[instagram/process] Step 3 — buscando perfil em graph.instagram.com/me")
+    // ── Step 2: Fetch profile via graph.instagram.com/v25.0/me ──────────────
+    // For Instagram Business Login (scopes: instagram_business_*):
+    //   - ig_exchange_token does NOT exist — only for deprecated Basic Display API
+    //   - The token from Step 1 is valid directly for /me on graph.instagram.com
+    //   - Response wraps data in { "data": [{ "user_id": "...", "username": "..." }] }
+    const accessToken = shortToken
+    console.log("[instagram/process] Step 2 — buscando perfil em graph.instagram.com/v25.0/me")
     const meRes = await fetch(
-      `${IG_GRAPH}/me?fields=id,name,username,profile_picture_url&access_token=${accessToken}`
+      `${IG_GRAPH}/me?fields=user_id,name,username,profile_picture_url,account_type&access_token=${accessToken}`
     )
-    const meData = await meRes.json()
-    console.log("[instagram/process] Step 3 status:", meRes.status)
-    console.log("[instagram/process] Step 3 resposta:", JSON.stringify(meData))
+    const meRaw = await meRes.json()
+    console.log("[instagram/process] Step 2 status:", meRes.status)
+    console.log("[instagram/process] Step 2 resposta:", JSON.stringify(meRaw))
 
-    if (!meRes.ok || meData.error) {
+    if (!meRes.ok || meRaw.error) {
       return NextResponse.json(
-        { error: `Erro ao buscar perfil: ${meData.error?.message} [código ${meData.error?.code}]` },
+        { error: `Erro ao buscar perfil: ${meRaw.error?.message} [código ${meRaw.error?.code}]` },
         { status: 400 }
       )
     }
 
-    const accountId       = meData.id       || igUserId
-    const accountName     = meData.name     || meData.username || `Instagram ${igUserId}`
+    // Business Login /me returns { "data": [{ ... }] } array
+    const meData      = Array.isArray(meRaw.data) ? meRaw.data[0] : meRaw
+    const accountId   = meData.user_id  || meData.id || igUserId
+    const accountName = meData.name     || meData.username || `Instagram ${igUserId}`
     const accountUsername = meData.username || null
     const profilePicture  = meData.profile_picture_url || null
 
