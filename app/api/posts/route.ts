@@ -205,7 +205,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media, coverMedia } = body
 
-  if (!workspaceId || !accountIds || accountIds.length === 0) {
+  const isDraft = scheduleType === "draft"
+  // Drafts don't require accounts — all other types do
+  if (!workspaceId || (!isDraft && (!accountIds || accountIds.length === 0))) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
   }
 
@@ -228,12 +230,12 @@ export async function POST(request: NextRequest) {
   }
 
   const publishNow = scheduleType === "now"
+  const postStatus = isDraft ? "draft" : publishNow ? "publishing" : "scheduled"
 
   try {
-    // Create post — status starts as "publishing" if now, "scheduled" if later
     const post = await sql`
       INSERT INTO posts (id, workspace_id, content, status, scheduled_at, created_by, created_at, updated_at)
-      VALUES (gen_random_uuid(), ${workspaceId}, ${content}, ${publishNow ? "publishing" : "scheduled"}, ${finalScheduledAt}, ${session.user.id}, NOW(), NOW())
+      VALUES (gen_random_uuid(), ${workspaceId}, ${content}, ${postStatus}, ${finalScheduledAt}, ${session.user.id}, NOW(), NOW())
       RETURNING id
     `
     const postId = post[0].id
@@ -260,6 +262,11 @@ export async function POST(request: NextRequest) {
         INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
         VALUES (gen_random_uuid(), ${postId}, ${coverMedia.url}, 'image', -1, NOW())
       `
+    }
+
+    // Drafts have no targets and are never published — return early
+    if (isDraft) {
+      return NextResponse.json({ id: postId, status: "draft" })
     }
 
     // Create post_targets and collect account info for immediate publishing

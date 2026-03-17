@@ -30,6 +30,7 @@ import {
   Send,
   Film,
   GripVertical,
+  BookmarkIcon,
 } from "lucide-react"
 import { upload } from "@vercel/blob/client"
 import { cn } from "@/lib/utils"
@@ -321,6 +322,47 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
 
   const isUploading = uploading || uploadingCover
   const canSubmit = !isUploading && !submitting && accounts.length > 0
+
+  // ── Save as draft — no accounts required, no publishing ───────────────────
+  const [savingDraft, setSavingDraft] = useState(false)
+
+  const handleSaveDraft = async () => {
+    if (isUploading) {
+      setError("Aguarde o upload da mídia terminar antes de salvar.")
+      return
+    }
+    // Drafts can have no accounts — save with whatever is filled
+    const content = watch("content") || ""
+    setSavingDraft(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId,
+          content,
+          postType: watch("postType"),
+          scheduleType: "draft",
+          accountIds: watch("accountIds") || [],
+          media: uploadedMedia,
+          coverMedia: uploadedCover || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setError(json.error || "Erro ao salvar rascunho")
+        return
+      }
+      setOpen(false)
+      resetForm()
+      router.refresh()
+    } catch (err: any) {
+      setError(err.message || "Erro inesperado.")
+    } finally {
+      setSavingDraft(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -619,43 +661,61 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
           </form>
         </ScrollArea>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-border bg-muted/30">
+        <div className="flex justify-between gap-3 px-6 py-4 border-t border-border bg-muted/30">
+          {/* Draft button — always visible when there's something to save */}
           <Button
             type="button"
-            variant="outline"
-            onClick={() => handleClose(false)}
-            disabled={submitting || uploading}
+            variant="ghost"
+            onClick={handleSaveDraft}
+            disabled={isUploading || savingDraft || submitting || (uploadedMedia.length === 0 && !watch("content"))}
+            className="gap-2 text-muted-foreground hover:text-foreground"
           >
-            Cancelar
-          </Button>
-          <Button
-            type="submit"
-            form="post-form"
-            disabled={!canSubmit}
-            className="gap-2 min-w-32"
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Enviando mídia...
-              </>
-            ) : submitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Agendando...
-              </>
-            ) : scheduleType === "now" ? (
-              <>
-                <Send className="w-4 h-4" />
-                Publicar
-              </>
+            {savingDraft ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <>
-                <CalendarDays className="w-4 h-4" />
-                Agendar
-              </>
+              <BookmarkIcon className="w-4 h-4" />
             )}
+            Salvar rascunho
           </Button>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleClose(false)}
+              disabled={submitting || uploading || savingDraft}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="post-form"
+              disabled={!canSubmit || savingDraft}
+              className="gap-2 min-w-32"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Enviando mídia...
+                </>
+              ) : submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Agendando...
+                </>
+              ) : scheduleType === "now" ? (
+                <>
+                  <Send className="w-4 h-4" />
+                  Publicar
+                </>
+              ) : (
+                <>
+                  <CalendarDays className="w-4 h-4" />
+                  Agendar
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
