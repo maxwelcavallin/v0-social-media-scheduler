@@ -101,15 +101,10 @@ export async function GET(request: NextRequest) {
         updated_at = NOW()
     `
 
-    // Redirecionar para connecting-instagram com sucesso para mostrar feedback visual
-    const successUrl = new URL(`/workspace/${workspaceId}/accounts/connecting-instagram`, request.url)
-    successUrl.searchParams.set("success", "1")
-    successUrl.searchParams.set("username", profile.username || igUserId)
-    return NextResponse.redirect(successUrl)
+    accountsUrl.searchParams.set("ig_success", profile.username || igUserId)
+    return NextResponse.redirect(accountsUrl)
   } catch (err: any) {
-    console.log("[v0] ig-callback catch error:", err.message)
-    const errorUrl = new URL(`/workspace/${workspaceId}/accounts/connecting-instagram`, request.url)
-    errorUrl.searchParams.set("error", encodeURIComponent(err.message || "unexpected_error"))
-    return NextResponse.redirect(errorUrl)
+    accountsUrl.searchParams.set("ig_error", encodeURIComponent(err.message || "unexpected_error"))
+    return NextResponse.redirect(accountsUrl)
   }
 }
