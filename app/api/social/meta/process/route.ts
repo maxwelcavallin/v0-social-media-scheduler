@@ -46,15 +46,17 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { code, workspaceId } = body
+  const { code, workspaceId, redirectUri: bodyRedirectUri } = body
 
   if (!code || !workspaceId) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
+  // Usar o redirectUri que veio do body (passado pelo connecting page a partir do callback)
+  // para garantir que seja idêntico ao que foi enviado ao Facebook no authorize
   const host = request.headers.get("host") ?? ""
   const protocol = host.startsWith("localhost") ? "http" : "https"
-  const redirectUri = `${protocol}://${host}/api/social/meta/callback`
+  const redirectUri = bodyRedirectUri || `${protocol}://${host}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET
@@ -97,9 +99,8 @@ export async function POST(request: NextRequest) {
     const meData = await meRes.json()
     const permData = await permRes.json()
     const grantedPerms = permData.data?.filter((p: any) => p.status === "granted").map((p: any) => p.permission)
-    console.log("[v0] meta/process user:", JSON.stringify(meData), "userId digits:", String(meData.id).length)
+    console.log("[v0] meta/process user:", JSON.stringify(meData))
     console.log("[v0] meta/process perms:", JSON.stringify(grantedPerms))
-    console.log("[v0] meta/process NOTA: ID com 16 dígitos = Instagram-scoped (app errado). ID com ~10-15 dígitos = Facebook user ID (correto)")
 
     // Step 3: /me/accounts
     const pages: any[] = []
@@ -143,12 +144,7 @@ export async function POST(request: NextRequest) {
 
     // Step 5: Se ainda vazio, retornar diagnóstico detalhado
     if (pages.length === 0) {
-      const userId = String(meData.id)
-      const isInstagramScoped = userId.length >= 16
-      const diagnosis = isInstagramScoped
-        ? `PROBLEMA: O FACEBOOK_APP_ID (${appId}) está gerando tokens Instagram-scoped (user ID tem ${userId.length} dígitos). Este app é um Instagram App, não um Facebook App. Configure FACEBOOK_APP_ID com o ID de um Facebook App separado no Meta for Developers.`
-        : `Nenhuma Página encontrada. Usuário: ${meData.name} (${userId}). Permissões: ${grantedPerms?.join(", ")}. Certifique-se de que o app tem acesso às suas páginas.`
-
+      const diagnosis = `Nenhuma Página encontrada. Usuário: ${meData.name} (${meData.id}). Permissões: ${grantedPerms?.join(", ")}. redirectUri usado: ${redirectUri}`
       console.log("[v0] meta/process step5 DIAGNÓSTICO:", diagnosis)
       return NextResponse.json({ error: diagnosis }, { status: 400 })
     }
