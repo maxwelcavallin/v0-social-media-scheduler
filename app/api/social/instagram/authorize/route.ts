@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
   const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri: REDIRECT_URI })).toString("base64")
 
   const params = new URLSearchParams({
-    force_reauth: "true",
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     response_type: "code",
@@ -32,7 +31,8 @@ export async function GET(request: NextRequest) {
     state,
   })
 
+  // Endpoint correto para Instagram Business Login API
   return NextResponse.redirect(
-    `https://www.instagram.com/oauth/authorize?${params.toString()}`
+    `https://api.instagram.com/oauth/authorize?${params.toString()}`
   )
 }
