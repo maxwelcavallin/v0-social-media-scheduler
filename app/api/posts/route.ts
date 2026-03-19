@@ -76,8 +76,9 @@ async function publishToInstagram(item: {
   media_urls: string[] | null
   media_types: string[] | null
   post_type: string
+  cover_url?: string | null
 }): Promise<string> {
-  const { access_token, account_id, content, media_urls, media_types, post_type } = item
+  const { access_token, account_id, content, media_urls, media_types, post_type, cover_url } = item
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
@@ -99,6 +100,10 @@ async function publishToInstagram(item: {
     }
     if (isVideo) {
       containerBody.video_url = media_urls[0]
+      // Capa personalizada para Reels
+      if (isReel && cover_url) {
+        containerBody.cover_url = cover_url
+      }
     } else {
       containerBody.image_url = media_urls[0]
     }
@@ -198,7 +203,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media } = body
+  const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media, coverUrl } = body
 
   if (!workspaceId || !accountIds || accountIds.length === 0) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
@@ -307,6 +312,7 @@ export async function POST(request: NextRequest) {
               media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
               media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
               post_type: postType,
+              cover_url: coverUrl || null,
             })
           }
 
