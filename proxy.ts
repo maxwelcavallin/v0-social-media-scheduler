@@ -2,35 +2,21 @@ import { NextRequest, NextResponse } from "next/server"
 
 const COOKIE_NAME = "socialdog_session"
 
-const PUBLIC_PATHS = [
-  "/",
-  "/login",
-  "/register",
-  "/privacy-policy",
-  "/data-deletion",
-]
+const protectedPaths = ["/dashboard", "/workspace"]
+const authPaths = ["/login", "/register"]
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
 
-  // Permitir todas as rotas de API
-  if (pathname.startsWith("/api/")) return NextResponse.next()
+  const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
+  const isAuthPath = authPaths.some((p) => pathname.startsWith(p))
 
-  // Permitir arquivos estáticos
-  if (pathname.startsWith("/_next/") || pathname.includes(".")) return NextResponse.next()
-
-  const session = request.cookies.get(COOKIE_NAME)
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))
-
-  // Rota protegida sem sessão → redireciona para login
-  if (!isPublic && !session) {
-    const loginUrl = new URL("/login", request.url)
-    loginUrl.searchParams.set("redirect", pathname)
-    return NextResponse.redirect(loginUrl)
+  if (isProtected && !sessionCookie) {
+    return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  // Já logado tentando acessar login/register → redireciona para dashboard
-  if (session && (pathname === "/login" || pathname === "/register")) {
+  if (isAuthPath && sessionCookie) {
     return NextResponse.redirect(new URL("/dashboard", request.url))
   }
 
@@ -38,5 +24,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|public).*)"],
 }

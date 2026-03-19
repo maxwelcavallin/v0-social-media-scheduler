@@ -7,6 +7,8 @@ interface Props {
   workspaceId: string
 }
 
+// Redirects to a server-side route that reads INSTAGRAM_APP_ID and builds the OAuth URL.
+// This avoids exposing the App ID on the client and works without NEXT_PUBLIC_ variables.
 export function ConnectInstagramButton({ workspaceId }: Props) {
   const handleConnect = () => {
     window.location.href = `/api/social/instagram/authorize?workspaceId=${workspaceId}`

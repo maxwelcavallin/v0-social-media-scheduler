@@ -26,13 +26,12 @@ async function upsertAccount(fields: {
       ${fields.accessToken}, ${fields.profilePictureUrl},
       true, NOW(), NOW(), NOW()
     )
-    ON CONFLICT (platform, account_id) DO UPDATE SET
+    ON CONFLICT (workspace_id, platform, account_id) DO UPDATE SET
       access_token        = EXCLUDED.access_token,
       account_name        = EXCLUDED.account_name,
       account_username    = EXCLUDED.account_username,
       profile_picture_url = EXCLUDED.profile_picture_url,
       page_id             = EXCLUDED.page_id,
-      workspace_id        = EXCLUDED.workspace_id,
       is_active           = true,
       updated_at          = NOW(),
       last_sync_at        = NOW()
@@ -46,33 +45,32 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { code, workspaceId, redirectUri: bodyRedirectUri } = body
+  const { code, workspaceId } = body
 
   if (!code || !workspaceId) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
-  // Usar o redirectUri que veio do body (passado pelo connecting page a partir do callback)
-  // para garantir que seja idêntico ao que foi enviado ao Facebook no authorize
   const host = request.headers.get("host") ?? ""
   const protocol = host.startsWith("localhost") ? "http" : "https"
-  const redirectUri = bodyRedirectUri || `${protocol}://${host}/api/social/meta/callback`
+  const redirectUri = `${protocol}://${host}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET
-
-  console.log("[v0] meta/process: appId:", appId, "redirectUri:", redirectUri, "workspaceId:", workspaceId)
 
   if (!appId || !appSecret) {
     return NextResponse.json({ error: "Configuração do app Facebook ausente." }, { status: 500 })
   }
 
+  console.log("[v0] meta/process: iniciando. workspaceId:", workspaceId, "redirectUri:", redirectUri)
+
   try {
     // Step 1: Exchange code for short-lived token
     const tokenUrl = `${GRAPH_API}/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
+    console.log("[v0] meta/process step1: trocando code. redirect_uri:", redirectUri)
     const tokenRes = await fetch(tokenUrl)
     const tokenData = await tokenRes.json()
-    console.log("[v0] meta/process step1 token exchange status:", tokenRes.status, "error:", tokenData.error ? JSON.stringify(tokenData.error) : "none", "has_token:", !!tokenData.access_token)
+    console.log("[v0] meta/process step1 status:", tokenRes.status, "error:", tokenData.error ? JSON.stringify(tokenData.error) : "none")
 
     if (tokenData.error) {
       return NextResponse.json(
@@ -88,109 +86,116 @@ export async function POST(request: NextRequest) {
       `${GRAPH_API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortToken}`
     )
     const longData = await longRes.json()
-    console.log("[v0] meta/process step2 long-lived status:", longRes.status, "error:", longData.error ? JSON.stringify(longData.error) : "none")
+    console.log("[v0] meta/process step2 long-lived:", longRes.status, "error:", longData.error ? JSON.stringify(longData.error) : "none")
     const userToken = longData.access_token || shortToken
 
-    // Buscar info do usuário e permissões para diagnóstico
-    const [meRes, permRes] = await Promise.all([
-      fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`),
-      fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
-    ])
-    const meData = await meRes.json()
-    const permData = await permRes.json()
-    const grantedPerms = permData.data?.filter((p: any) => p.status === "granted").map((p: any) => p.permission)
-    console.log("[v0] meta/process user:", JSON.stringify(meData))
-    console.log("[v0] meta/process perms:", JSON.stringify(grantedPerms))
-
-    // Step 3: /me/accounts
+    // Step 3: Try /me/accounts first (pages linked to personal profile)
     const pages: any[] = []
+
     const accountsRes = await fetch(
       `${GRAPH_API}/me/accounts?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
     )
     const accountsData = await accountsRes.json()
-    console.log("[v0] meta/process step3 /me/accounts status:", accountsRes.status, "pages:", accountsData.data?.length ?? 0, "error:", accountsData.error ? JSON.stringify(accountsData.error) : "none")
+    console.log("[v0] meta/process step3 /me/accounts:", accountsRes.status, "pages found:", accountsData.data?.length ?? 0, "error:", accountsData.error ? JSON.stringify(accountsData.error) : "none")
 
     if (accountsData.data && accountsData.data.length > 0) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: Business Manager — múltiplos endpoints
-    if (pages.length === 0) {
-      const bizRes = await fetch(`${GRAPH_API}/me/businesses?access_token=${userToken}&limit=25`)
-      const bizData = await bizRes.json()
-      console.log("[v0] meta/process step4 /me/businesses status:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
+    // Buscar user_id e permissões concedidas para diagnóstico
+    const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
+    const meData = await meRes.json()
+    const userId = meData.id
+    console.log("[v0] meta/process: userId:", userId, "name:", meData.name)
 
-      const pageFields = "id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}"
+    // Verificar quais permissões foram realmente concedidas pelo usuário
+    const permsRes = await fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
+    const permsData = await permsRes.json()
+    const grantedPerms = permsData.data?.filter((p: any) => p.status === "granted").map((p: any) => p.permission)
+    console.log("[v0] meta/process permissões concedidas:", JSON.stringify(grantedPerms))
 
-      if (bizData.data && bizData.data.length > 0) {
-        for (const biz of bizData.data) {
-          console.log("[v0] meta/process step4 processando biz:", biz.id, biz.name)
-
-          // 4A: /{biz}/owned_pages (endpoint dedicado, não nested)
-          const ownedRes = await fetch(
-            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
-          )
-          const ownedData = await ownedRes.json()
-          console.log("[v0] meta/process step4A owned_pages:", ownedData.data?.length ?? 0, "error:", ownedData.error ? JSON.stringify(ownedData.error) : "none")
-          if (ownedData.data?.length > 0) pages.push(...ownedData.data)
-
-          // 4B: /{biz}/client_pages
-          const clientRes = await fetch(
-            `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
-          )
-          const clientData = await clientRes.json()
-          console.log("[v0] meta/process step4B client_pages:", clientData.data?.length ?? 0, "error:", clientData.error ? JSON.stringify(clientData.error) : "none")
-          if (clientData.data?.length > 0) pages.push(...clientData.data)
-
-          // 4C: /{biz}/pages (lista TODAS as páginas do negócio)
-          const bizPagesRes = await fetch(
-            `${GRAPH_API}/${biz.id}/pages?access_token=${userToken}&limit=100&fields=${pageFields}`
-          )
-          const bizPagesData = await bizPagesRes.json()
-          console.log("[v0] meta/process step4C /{biz}/pages:", bizPagesData.data?.length ?? 0, "error:", bizPagesData.error ? JSON.stringify(bizPagesData.error) : "none")
-          if (bizPagesData.data?.length > 0) pages.push(...bizPagesData.data)
-
-          // 4D: /{biz}/user_owned_pages?user_id=
-          const uopRes = await fetch(
-            `${GRAPH_API}/${biz.id}/user_owned_pages?user_id=${meData.id}&access_token=${userToken}&limit=100&fields=${pageFields}`
-          )
-          const uopData = await uopRes.json()
-          console.log("[v0] meta/process step4D user_owned_pages:", uopData.data?.length ?? 0, "error:", uopData.error ? JSON.stringify(uopData.error) : "none")
-          if (uopData.data?.length > 0) pages.push(...uopData.data)
-        }
-      }
-
-      // 4E: app token fallback — buscar páginas via token de aplicativo
-      if (pages.length === 0) {
-        const appToken = `${appId}|${appSecret}`
-        const appPagesRes = await fetch(
-          `${GRAPH_API}/${meData.id}/accounts?access_token=${appToken}&limit=100&fields=${pageFields}`
+    // Step 4: Fallback A — user_id/accounts (mesmo que /me/accounts mas com ID explícito)
+    if (pages.length === 0 && userId) {
+      console.log("[v0] meta/process step4A: tentando /{userId}/accounts")
+      try {
+        const userAccountsRes = await fetch(
+          `${GRAPH_API}/${userId}/accounts?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
         )
-        const appPagesData = await appPagesRes.json()
-        console.log("[v0] meta/process step4E app-token /accounts:", appPagesData.data?.length ?? 0, "error:", appPagesData.error ? JSON.stringify(appPagesData.error) : "none")
-        if (appPagesData.data?.length > 0) pages.push(...appPagesData.data)
+        const userAccountsData = await userAccountsRes.json()
+        console.log("[v0] meta/process step4A /{userId}/accounts:", userAccountsRes.status, "count:", userAccountsData.data?.length ?? 0, "error:", userAccountsData.error ? JSON.stringify(userAccountsData.error) : "none")
+        if (userAccountsData.data?.length > 0) pages.push(...userAccountsData.data)
+      } catch (e) {
+        console.log("[v0] meta/process step4A erro:", e instanceof Error ? e.message : e)
       }
     }
 
-    // Deduplicar páginas por ID
-    const seenIds = new Set<string>()
-    const uniquePages = pages.filter(p => {
-      if (seenIds.has(p.id)) return false
-      seenIds.add(p.id)
-      return true
-    })
-    pages.length = 0
-    pages.push(...uniquePages)
-    console.log("[v0] meta/process total páginas únicas:", pages.length)
-
-    // Step 5: Se ainda vazio, retornar diagnóstico detalhado
+    // Step 4B: Business Manager — owned_pages, client_pages, user_owned_pages
     if (pages.length === 0) {
-      const diagnosis = `Nenhuma Página encontrada. Usuário: ${meData.name} (${meData.id}). Permissões: ${grantedPerms?.join(", ")}. redirectUri usado: ${redirectUri}`
-      console.log("[v0] meta/process step5 DIAGNÓSTICO:", diagnosis)
-      return NextResponse.json({ error: diagnosis }, { status: 400 })
+      console.log("[v0] meta/process step4B: tentando Business Manager")
+      try {
+        const bizRes = await fetch(`${GRAPH_API}/me/businesses?access_token=${userToken}&limit=25`)
+        const bizData = await bizRes.json()
+        console.log("[v0] meta/process step4B /me/businesses:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
+
+        if (bizData.data && bizData.data.length > 0) {
+          for (const biz of bizData.data) {
+            const pageFields = "id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}"
+
+            // /{biz}/pages — lista TODAS as páginas conectadas ao negócio
+            const bizPagesRes = await fetch(
+              `${GRAPH_API}/${biz.id}/pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+            )
+            const bizPagesData = await bizPagesRes.json()
+            console.log("[v0] meta/process step4B /{biz}/pages biz", biz.id, ":", bizPagesData.data?.length ?? 0, "error:", bizPagesData.error ? JSON.stringify(bizPagesData.error) : "none")
+            if (bizPagesData.data?.length > 0) pages.push(...bizPagesData.data)
+
+            // owned_pages
+            const ownedRes = await fetch(
+              `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+            )
+            const ownedData = await ownedRes.json()
+            console.log("[v0] meta/process step4B owned_pages biz", biz.id, ":", ownedData.data?.length ?? 0, "error:", ownedData.error ? JSON.stringify(ownedData.error) : "none")
+            if (ownedData.data?.length > 0) pages.push(...ownedData.data)
+
+            // client_pages
+            const clientRes = await fetch(
+              `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+            )
+            const clientData = await clientRes.json()
+            console.log("[v0] meta/process step4B client_pages biz", biz.id, ":", clientData.data?.length ?? 0, "error:", clientData.error ? JSON.stringify(clientData.error) : "none")
+            if (clientData.data?.length > 0) pages.push(...clientData.data)
+          }
+        }
+      } catch (e) {
+        console.log("[v0] meta/process step4B erro:", e instanceof Error ? e.message : e)
+      }
+    }
+
+    // Step 4C: Último fallback — buscar páginas via app token (app-level token)
+    if (pages.length === 0) {
+      console.log("[v0] meta/process step4C: tentando app token para listar páginas do usuário")
+      try {
+        const appToken = `${appId}|${appSecret}`
+        const appPagesRes = await fetch(
+          `${GRAPH_API}/${userId}/accounts?access_token=${appToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+        )
+        const appPagesData = await appPagesRes.json()
+        console.log("[v0] meta/process step4C app token pages:", appPagesRes.status, "count:", appPagesData.data?.length ?? 0, "error:", appPagesData.error ? JSON.stringify(appPagesData.error) : "none")
+        if (appPagesData.data?.length > 0) pages.push(...appPagesData.data)
+      } catch (e) {
+        console.log("[v0] meta/process step4C erro:", e instanceof Error ? e.message : e)
+      }
+    }
+
+    // Step 5: Se ainda vazio, retornar erro informativo com diagnóstico
+    if (pages.length === 0) {
+      return NextResponse.json({
+        error: `Nenhuma Página do Facebook encontrada para o usuário ${meData.name} (ID: ${userId}). Certifique-se de que você é administrador de pelo menos uma Página do Facebook e que concedeu todas as permissões solicitadas.`,
+      }, { status: 400 })
     }
 
     // Step 6: Save pages and linked Instagram accounts
+    console.log("[v0] meta/process step6: salvando", pages.length, "páginas")
     const saved: { platform: string; name: string }[] = []
 
     for (const page of pages) {

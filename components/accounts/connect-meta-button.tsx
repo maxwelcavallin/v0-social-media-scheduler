@@ -9,7 +9,8 @@ interface Props {
 
 export function ConnectMetaButton({ workspaceId }: Props) {
   const handleConnect = () => {
-    window.location.href = `/api/social/meta/authorize?workspaceId=${workspaceId}`
+    // Redirect to server-side authorize route — FACEBOOK_APP_ID stays on the server
+    window.location.href = `/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`
   }
 
   return (

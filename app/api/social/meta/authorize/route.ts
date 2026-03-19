@@ -2,16 +2,27 @@ import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
-  const workspaceId = searchParams.get("workspaceId") || ""
+  const workspaceId = searchParams.get("workspaceId")
+
+  if (!workspaceId) {
+    return NextResponse.json({ error: "workspaceId obrigatório" }, { status: 400 })
+  }
 
   const appId = process.env.FACEBOOK_APP_ID
   if (!appId) {
-    return NextResponse.json({ error: "FACEBOOK_APP_ID não configurado." }, { status: 500 })
+    return NextResponse.json(
+      { error: "FACEBOOK_APP_ID não configurado no servidor." },
+      { status: 500 }
+    )
   }
+  console.log("[v0] meta/authorize: usando FACEBOOK_APP_ID:", appId, "redirectUri:", `${request.headers.get("host")?.startsWith("localhost") ? "http" : "https"}://${request.headers.get("host")}/api/social/meta/callback`)
 
-  // Usar URL fixa de produção — deve ser exatamente igual à cadastrada no Meta
-  const redirectUri = "https://social.list.dog/api/social/meta/callback"
-  const state = btoa(JSON.stringify({ workspaceId, redirectUri }))
+  // Build redirect_uri from the actual request host — keeps it consistent with the callback
+  const host = request.headers.get("host") ?? ""
+  const protocol = host.startsWith("localhost") ? "http" : "https"
+  const redirectUri = `${protocol}://${host}/api/social/meta/callback`
+
+  const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri })).toString("base64")
 
   const params = new URLSearchParams({
     client_id: appId,
@@ -20,7 +31,6 @@ export async function GET(request: NextRequest) {
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
-      "pages_manage_metadata",
       "instagram_basic",
       "instagram_content_publish",
       "business_management",
