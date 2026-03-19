@@ -102,11 +102,17 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Buscar user_id real para usar como fallback
+    // Buscar user_id e permissões concedidas para diagnóstico
     const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
     const meData = await meRes.json()
     const userId = meData.id
     console.log("[v0] meta/process: userId:", userId, "name:", meData.name)
+
+    // Verificar quais permissões foram realmente concedidas pelo usuário
+    const permsRes = await fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
+    const permsData = await permsRes.json()
+    const grantedPerms = permsData.data?.filter((p: any) => p.status === "granted").map((p: any) => p.permission)
+    console.log("[v0] meta/process permissões concedidas:", JSON.stringify(grantedPerms))
 
     // Step 4: Fallback A — user_id/accounts (mesmo que /me/accounts mas com ID explícito)
     if (pages.length === 0 && userId) {
@@ -133,9 +139,19 @@ export async function POST(request: NextRequest) {
 
         if (bizData.data && bizData.data.length > 0) {
           for (const biz of bizData.data) {
+            const pageFields = "id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}"
+
+            // /{biz}/pages — lista TODAS as páginas conectadas ao negócio
+            const bizPagesRes = await fetch(
+              `${GRAPH_API}/${biz.id}/pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+            )
+            const bizPagesData = await bizPagesRes.json()
+            console.log("[v0] meta/process step4B /{biz}/pages biz", biz.id, ":", bizPagesData.data?.length ?? 0, "error:", bizPagesData.error ? JSON.stringify(bizPagesData.error) : "none")
+            if (bizPagesData.data?.length > 0) pages.push(...bizPagesData.data)
+
             // owned_pages
             const ownedRes = await fetch(
-              `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+              `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
             )
             const ownedData = await ownedRes.json()
             console.log("[v0] meta/process step4B owned_pages biz", biz.id, ":", ownedData.data?.length ?? 0, "error:", ownedData.error ? JSON.stringify(ownedData.error) : "none")
@@ -143,21 +159,11 @@ export async function POST(request: NextRequest) {
 
             // client_pages
             const clientRes = await fetch(
-              `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+              `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
             )
             const clientData = await clientRes.json()
             console.log("[v0] meta/process step4B client_pages biz", biz.id, ":", clientData.data?.length ?? 0, "error:", clientData.error ? JSON.stringify(clientData.error) : "none")
             if (clientData.data?.length > 0) pages.push(...clientData.data)
-
-            // user_owned_pages (páginas que o usuário possui dentro do BM)
-            if (userId) {
-              const uopRes = await fetch(
-                `${GRAPH_API}/${biz.id}/user_owned_pages?user_id=${userId}&access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
-              )
-              const uopData = await uopRes.json()
-              console.log("[v0] meta/process step4B user_owned_pages biz", biz.id, ":", uopData.data?.length ?? 0, "error:", uopData.error ? JSON.stringify(uopData.error) : "none")
-              if (uopData.data?.length > 0) pages.push(...uopData.data)
-            }
           }
         }
       } catch (e) {
