@@ -59,16 +59,18 @@ export async function POST(request: NextRequest) {
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET
 
+  console.log("[v0] meta/process: appId:", appId, "redirectUri:", redirectUri, "workspaceId:", workspaceId)
+
   if (!appId || !appSecret) {
     return NextResponse.json({ error: "Configuração do app Facebook ausente." }, { status: 500 })
   }
 
   try {
     // Step 1: Exchange code for short-lived token
-    const tokenRes = await fetch(
-      `${GRAPH_API}/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
-    )
+    const tokenUrl = `${GRAPH_API}/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
+    const tokenRes = await fetch(tokenUrl)
     const tokenData = await tokenRes.json()
+    console.log("[v0] meta/process step1 token exchange status:", tokenRes.status, "error:", tokenData.error ? JSON.stringify(tokenData.error) : "none", "has_token:", !!tokenData.access_token)
 
     if (tokenData.error) {
       return NextResponse.json(
@@ -84,37 +86,51 @@ export async function POST(request: NextRequest) {
       `${GRAPH_API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortToken}`
     )
     const longData = await longRes.json()
+    console.log("[v0] meta/process step2 long-lived status:", longRes.status, "error:", longData.error ? JSON.stringify(longData.error) : "none")
     const userToken = longData.access_token || shortToken
 
-    // Step 3: Try /me/accounts first (pages linked to personal profile)
-    const pages: any[] = []
+    // Buscar info do usuário e permissões para diagnóstico
+    const [meRes, permRes] = await Promise.all([
+      fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`),
+      fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
+    ])
+    const meData = await meRes.json()
+    const permData = await permRes.json()
+    const grantedPerms = permData.data?.filter((p: any) => p.status === "granted").map((p: any) => p.permission)
+    console.log("[v0] meta/process user:", JSON.stringify(meData), "userId digits:", String(meData.id).length)
+    console.log("[v0] meta/process perms:", JSON.stringify(grantedPerms))
+    console.log("[v0] meta/process NOTA: ID com 16 dígitos = Instagram-scoped (app errado). ID com ~10-15 dígitos = Facebook user ID (correto)")
 
+    // Step 3: /me/accounts
+    const pages: any[] = []
     const accountsRes = await fetch(
       `${GRAPH_API}/me/accounts?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
     )
     const accountsData = await accountsRes.json()
+    console.log("[v0] meta/process step3 /me/accounts status:", accountsRes.status, "pages:", accountsData.data?.length ?? 0, "error:", accountsData.error ? JSON.stringify(accountsData.error) : "none")
 
     if (accountsData.data && accountsData.data.length > 0) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: If still empty, try Business Manager pages
+    // Step 4: Business Manager
     if (pages.length === 0) {
       const bizRes = await fetch(
         `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
       )
       const bizData = await bizRes.json()
+      console.log("[v0] meta/process step4 /me/businesses status:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
 
       if (bizData.data && bizData.data.length > 0) {
         for (const biz of bizData.data) {
+          console.log("[v0] meta/process step4 biz", biz.id, biz.name, "owned_pages:", biz.owned_pages?.data?.length ?? 0)
           if (biz.owned_pages?.data?.length > 0) {
-            // For Business Manager pages, get a page token via token exchange
             for (const p of biz.owned_pages.data) {
-              // Get a proper page access token
               const pageTokenRes = await fetch(
                 `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
               )
               const pageTokenData = await pageTokenRes.json()
+              console.log("[v0] meta/process step4 page", p.id, p.name, "token_ok:", !!pageTokenData.access_token, "error:", pageTokenData.error ? JSON.stringify(pageTokenData.error) : "none")
               pages.push({
                 ...p,
                 access_token: pageTokenData.access_token || userToken,
@@ -125,20 +141,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 5: If still empty, show debug info
+    // Step 5: Se ainda vazio, retornar diagnóstico detalhado
     if (pages.length === 0) {
-      const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
-      const meData = await meRes.json()
-      const permRes = await fetch(`${GRAPH_API}/me/permissions?access_token=${userToken}`)
-      const permData = await permRes.json()
-      const grantedPerms = permData.data
-        ?.filter((p: any) => p.status === "granted")
-        .map((p: any) => p.permission)
-        .join(", ")
+      const userId = String(meData.id)
+      const isInstagramScoped = userId.length >= 16
+      const diagnosis = isInstagramScoped
+        ? `PROBLEMA: O FACEBOOK_APP_ID (${appId}) está gerando tokens Instagram-scoped (user ID tem ${userId.length} dígitos). Este app é um Instagram App, não um Facebook App. Configure FACEBOOK_APP_ID com o ID de um Facebook App separado no Meta for Developers.`
+        : `Nenhuma Página encontrada. Usuário: ${meData.name} (${userId}). Permissões: ${grantedPerms?.join(", ")}. Certifique-se de que o app tem acesso às suas páginas.`
 
-      return NextResponse.json({
-        error: `Nenhuma Página encontrada. Usuário: ${meData.name} (${meData.id}). Permissões concedidas: ${grantedPerms || "nenhuma"}. Se suas páginas estão no Business Manager, certifique-se de que o app tem acesso à sua Business.`,
-      }, { status: 400 })
+      console.log("[v0] meta/process step5 DIAGNÓSTICO:", diagnosis)
+      return NextResponse.json({ error: diagnosis }, { status: 400 })
     }
 
     // Step 6: Save pages and linked Instagram accounts
