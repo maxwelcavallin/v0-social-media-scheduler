@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
 const IG_API = "https://api.instagram.com"
+const GRAPH_FB = "https://graph.facebook.com"
 const GRAPH_IG = "https://graph.instagram.com"
 const CLIENT_ID = "2170374997100265"
 const REDIRECT_URI = "https://social.list.dog/api/social/instagram/callback"
@@ -54,22 +55,36 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] ig-callback step1 body enviado:", tokenBody.toString().replace(appSecret, "***"))
 
-    const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
+    // Tentar primeiro com api.instagram.com (Instagram Login puro)
+    // Se falhar, tentar com graph.facebook.com (Facebook App com Instagram Login)
+    let tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: tokenBody.toString(),
     })
-    const tokenData = await tokenRes.json()
-    console.log("[v0] ig-callback step1 status:", tokenRes.status, "data:", JSON.stringify(tokenData))
+    let tokenData = await tokenRes.json()
+    console.log("[v0] ig-callback step1 via api.instagram.com status:", tokenRes.status, "data:", JSON.stringify(tokenData))
 
     if (!tokenRes.ok || tokenData.error_type) {
-      console.log("[v0] ig-callback step1 ERRO:", tokenData.error_message)
-      accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error_message || "auth_error"))
+      console.log("[v0] ig-callback step1 fallback: tentando graph.facebook.com")
+      tokenRes = await fetch(`${GRAPH_FB}/v22.0/oauth/access_token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: tokenBody.toString(),
+      })
+      tokenData = await tokenRes.json()
+      console.log("[v0] ig-callback step1 via graph.facebook.com status:", tokenRes.status, "data:", JSON.stringify(tokenData))
+    }
+
+    if (!tokenRes.ok || tokenData.error_type || tokenData.error) {
+      console.log("[v0] ig-callback step1 ERRO final:", tokenData.error_message || tokenData.error?.message)
+      accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error_message || tokenData.error?.message || "auth_error"))
       return NextResponse.redirect(accountsUrl)
     }
 
     const shortToken: string = tokenData.access_token
-    const igUserId: string = String(tokenData.user_id)
+    // graph.facebook.com retorna user_id como string; api.instagram.com como number
+    const igUserId: string = String(tokenData.user_id || tokenData.id || "")
 
     // Step 2: Long-lived token (60 dias)
     const llRes = await fetch(
