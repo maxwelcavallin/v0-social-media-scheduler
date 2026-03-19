@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -23,7 +22,6 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 export default function LoginPage() {
-  const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -39,8 +37,10 @@ export default function LoginPage() {
       setError(result.error.message)
       setLoading(false)
     } else {
-      router.push("/dashboard")
-      router.refresh()
+      // Hard navigation para garantir que o cookie de sessão seja enviado ao proxy
+      const params = new URLSearchParams(window.location.search)
+      const redirect = params.get("redirect") || "/dashboard"
+      window.location.href = redirect
     }
   }
 
