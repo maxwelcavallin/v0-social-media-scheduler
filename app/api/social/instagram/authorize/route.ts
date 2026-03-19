@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "INSTAGRAM_APP_ID não configurado." }, { status: 500 })
   }
 
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/social/instagram/callback`
+  // Usar URL fixa de produção — deve ser exatamente igual à cadastrada no Meta
+  const redirectUri = "https://social.list.dog/api/social/instagram/callback"
   const state = btoa(JSON.stringify({ workspaceId, redirectUri }))
 
   const params = new URLSearchParams({
