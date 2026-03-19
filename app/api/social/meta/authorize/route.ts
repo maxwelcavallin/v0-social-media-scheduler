@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
+  console.log("[v0] meta/authorize: usando FACEBOOK_APP_ID:", appId, "redirectUri:", `${request.headers.get("host")?.startsWith("localhost") ? "http" : "https"}://${request.headers.get("host")}/api/social/meta/callback`)
 
   // Build redirect_uri from the actual request host — keeps it consistent with the callback
   const host = request.headers.get("host") ?? ""
