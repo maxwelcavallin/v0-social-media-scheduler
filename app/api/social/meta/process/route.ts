@@ -114,33 +114,74 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: Business Manager
+    // Step 4: Business Manager — múltiplos endpoints
     if (pages.length === 0) {
-      const bizRes = await fetch(
-        `${GRAPH_API}/me/businesses?access_token=${userToken}&fields=id,name,owned_pages{id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}}`
-      )
+      const bizRes = await fetch(`${GRAPH_API}/me/businesses?access_token=${userToken}&limit=25`)
       const bizData = await bizRes.json()
       console.log("[v0] meta/process step4 /me/businesses status:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
 
+      const pageFields = "id,name,picture{url},instagram_business_account{id,name,username,profile_picture_url}"
+
       if (bizData.data && bizData.data.length > 0) {
         for (const biz of bizData.data) {
-          console.log("[v0] meta/process step4 biz", biz.id, biz.name, "owned_pages:", biz.owned_pages?.data?.length ?? 0)
-          if (biz.owned_pages?.data?.length > 0) {
-            for (const p of biz.owned_pages.data) {
-              const pageTokenRes = await fetch(
-                `${GRAPH_API}/${p.id}?fields=access_token&access_token=${userToken}`
-              )
-              const pageTokenData = await pageTokenRes.json()
-              console.log("[v0] meta/process step4 page", p.id, p.name, "token_ok:", !!pageTokenData.access_token, "error:", pageTokenData.error ? JSON.stringify(pageTokenData.error) : "none")
-              pages.push({
-                ...p,
-                access_token: pageTokenData.access_token || userToken,
-              })
-            }
-          }
+          console.log("[v0] meta/process step4 processando biz:", biz.id, biz.name)
+
+          // 4A: /{biz}/owned_pages (endpoint dedicado, não nested)
+          const ownedRes = await fetch(
+            `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+          )
+          const ownedData = await ownedRes.json()
+          console.log("[v0] meta/process step4A owned_pages:", ownedData.data?.length ?? 0, "error:", ownedData.error ? JSON.stringify(ownedData.error) : "none")
+          if (ownedData.data?.length > 0) pages.push(...ownedData.data)
+
+          // 4B: /{biz}/client_pages
+          const clientRes = await fetch(
+            `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+          )
+          const clientData = await clientRes.json()
+          console.log("[v0] meta/process step4B client_pages:", clientData.data?.length ?? 0, "error:", clientData.error ? JSON.stringify(clientData.error) : "none")
+          if (clientData.data?.length > 0) pages.push(...clientData.data)
+
+          // 4C: /{biz}/pages (lista TODAS as páginas do negócio)
+          const bizPagesRes = await fetch(
+            `${GRAPH_API}/${biz.id}/pages?access_token=${userToken}&limit=100&fields=${pageFields}`
+          )
+          const bizPagesData = await bizPagesRes.json()
+          console.log("[v0] meta/process step4C /{biz}/pages:", bizPagesData.data?.length ?? 0, "error:", bizPagesData.error ? JSON.stringify(bizPagesData.error) : "none")
+          if (bizPagesData.data?.length > 0) pages.push(...bizPagesData.data)
+
+          // 4D: /{biz}/user_owned_pages?user_id=
+          const uopRes = await fetch(
+            `${GRAPH_API}/${biz.id}/user_owned_pages?user_id=${meData.id}&access_token=${userToken}&limit=100&fields=${pageFields}`
+          )
+          const uopData = await uopRes.json()
+          console.log("[v0] meta/process step4D user_owned_pages:", uopData.data?.length ?? 0, "error:", uopData.error ? JSON.stringify(uopData.error) : "none")
+          if (uopData.data?.length > 0) pages.push(...uopData.data)
         }
       }
+
+      // 4E: app token fallback — buscar páginas via token de aplicativo
+      if (pages.length === 0) {
+        const appToken = `${appId}|${appSecret}`
+        const appPagesRes = await fetch(
+          `${GRAPH_API}/${meData.id}/accounts?access_token=${appToken}&limit=100&fields=${pageFields}`
+        )
+        const appPagesData = await appPagesRes.json()
+        console.log("[v0] meta/process step4E app-token /accounts:", appPagesData.data?.length ?? 0, "error:", appPagesData.error ? JSON.stringify(appPagesData.error) : "none")
+        if (appPagesData.data?.length > 0) pages.push(...appPagesData.data)
+      }
     }
+
+    // Deduplicar páginas por ID
+    const seenIds = new Set<string>()
+    const uniquePages = pages.filter(p => {
+      if (seenIds.has(p.id)) return false
+      seenIds.add(p.id)
+      return true
+    })
+    pages.length = 0
+    pages.push(...uniquePages)
+    console.log("[v0] meta/process total páginas únicas:", pages.length)
 
     // Step 5: Se ainda vazio, retornar diagnóstico detalhado
     if (pages.length === 0) {
