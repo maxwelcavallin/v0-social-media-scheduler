@@ -33,21 +33,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(accountsUrl)
   }
 
-  // INSTAGRAM_APP_ID é um Facebook App ID — a troca de token usa graph.facebook.com
-  // com FACEBOOK_APP_SECRET. O authorize usa www.instagram.com/oauth/authorize
-  // que é o fluxo Instagram Login via Facebook App.
+  // App Instagram Login puro (Social Dog-IG) — usa api.instagram.com + INSTAGRAM_APP_KEY
   const appId = process.env.INSTAGRAM_APP_ID
-  const appSecret = process.env.FACEBOOK_APP_SECRET
+  const appSecret = process.env.INSTAGRAM_APP_KEY
   if (!appId || !appSecret) {
-    console.log("[v0] ig-callback: INSTAGRAM_APP_ID ou FACEBOOK_APP_SECRET não configurado. appId:", !!appId, "appSecret:", !!appSecret)
+    console.log("[v0] ig-callback: INSTAGRAM_APP_ID ou INSTAGRAM_APP_KEY não configurado. appId:", !!appId, "appSecret:", !!appSecret)
     accountsUrl.searchParams.set("ig_error", "config_error")
     return NextResponse.redirect(accountsUrl)
   }
 
-  console.log("[v0] ig-callback: iniciando troca de token. workspaceId:", workspaceId, "code:", code?.slice(0, 20), "appId:", appId)
+  console.log("[v0] ig-callback: appId:", appId, "redirect_uri enviado:", REDIRECT_URI)
 
   try {
-    // Step 1: Trocar código por token via graph.facebook.com (Instagram Login via Facebook App)
+    // Step 1: Trocar código por short-lived token via api.instagram.com (Instagram Login puro)
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
@@ -56,9 +54,9 @@ export async function GET(request: NextRequest) {
       code,
     })
 
-    console.log("[v0] ig-callback step1 body enviado:", tokenBody.toString().replace(appSecret, "***"))
+    console.log("[v0] ig-callback step1 body:", tokenBody.toString().replace(appSecret, "***"))
 
-    const tokenRes = await fetch(`${GRAPH_FB}/v22.0/oauth/access_token`, {
+    const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: tokenBody.toString(),
@@ -66,17 +64,17 @@ export async function GET(request: NextRequest) {
     const tokenData = await tokenRes.json()
     console.log("[v0] ig-callback step1 status:", tokenRes.status, "data:", JSON.stringify(tokenData))
 
-    if (!tokenRes.ok || tokenData.error) {
-      console.log("[v0] ig-callback step1 ERRO:", tokenData.error?.message)
-      accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error?.message || "auth_error"))
+    if (!tokenRes.ok || tokenData.error_type) {
+      console.log("[v0] ig-callback step1 ERRO:", tokenData.error_message)
+      accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error_message || "auth_error"))
       return NextResponse.redirect(accountsUrl)
     }
 
     const shortToken: string = tokenData.access_token
-    const igUserId: string = String(tokenData.user_id || tokenData.id || "")
+    const igUserId: string = String(tokenData.user_id || "")
 
-    // Step 2: Long-lived token via graph.instagram.com (usa INSTAGRAM_APP_KEY)
-    const igSecret = process.env.INSTAGRAM_APP_KEY || appSecret
+    // Step 2: Long-lived token via graph.instagram.com
+    const igSecret = appSecret
     const llRes = await fetch(
       `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${igSecret}&access_token=${shortToken}`
     )
