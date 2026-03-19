@@ -37,19 +37,12 @@ export async function POST(request: NextRequest) {
       code,
     })
 
-    console.log("[v0] instagram/process - client_id:", CLIENT_ID)
-    console.log("[v0] instagram/process - redirect_uri:", usedRedirectUri)
-    console.log("[v0] instagram/process - body (sem secret):", tokenBody.toString().replace(appSecret, "***"))
-
     const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: tokenBody.toString(),
     })
     const tokenData = await tokenRes.json()
-
-    console.log("[v0] instagram/process - tokenRes.status:", tokenRes.status)
-    console.log("[v0] instagram/process - tokenData:", JSON.stringify(tokenData))
 
     if (!tokenRes.ok || tokenData.error_type || tokenData.error) {
       return NextResponse.json(

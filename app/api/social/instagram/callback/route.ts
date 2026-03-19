@@ -21,24 +21,18 @@ export async function GET(request: NextRequest) {
     workspaceId = rawState || ""
   }
 
-  console.log("[v0] ig-callback code:", !!code, "workspaceId:", workspaceId, "error:", error)
-
   const accountsUrl = new URL(`/workspace/${workspaceId}/accounts`, request.url)
 
   if (error || !code || !workspaceId) {
-    console.log("[v0] ig-callback early-exit: error=", error, "code=", !!code, "workspaceId=", workspaceId)
     accountsUrl.searchParams.set("ig_error", error || "missing_params")
     return NextResponse.redirect(accountsUrl)
   }
 
   const appSecret = process.env.INSTAGRAM_APP_KEY
   if (!appSecret) {
-    console.log("[v0] ig-callback early-exit: INSTAGRAM_APP_KEY not set")
     accountsUrl.searchParams.set("ig_error", "config_error")
     return NextResponse.redirect(accountsUrl)
   }
-
-  console.log("[v0] ig-callback proceeding to token exchange")
 
   try {
     // Step 1: Trocar código por short-lived token — feito AQUI no servidor imediatamente
@@ -78,33 +72,38 @@ export async function GET(request: NextRequest) {
     )
     const profile = await profileRes.json()
 
-    // Step 4: Salvar no banco (usar colunas corretas do schema: account_username, não username)
+    // Step 4: Salvar no banco
     const sql = neon(process.env.DATABASE_URL!)
     await sql`
       INSERT INTO social_accounts (
-        workspace_id, platform, account_id, account_name,
-        account_username, profile_picture_url, access_token, is_active, updated_at
+        workspace_id, platform, account_id, page_id, account_name,
+        account_username, profile_picture_url, access_token,
+        is_active, last_sync_at, created_at, updated_at
       ) VALUES (
-        ${workspaceId}, 'instagram', ${igUserId},
+        ${workspaceId}, 'instagram', ${igUserId}, NULL,
         ${profile.name || profile.username || "Instagram"},
         ${profile.username || null},
         ${profile.profile_picture_url || null},
-        ${longToken}, true, NOW()
+        ${longToken}, true, NOW(), NOW(), NOW()
       )
       ON CONFLICT (workspace_id, platform, account_id)
       DO UPDATE SET
-        account_name = EXCLUDED.account_name,
-        account_username = EXCLUDED.account_username,
+        account_name        = EXCLUDED.account_name,
+        account_username    = EXCLUDED.account_username,
         profile_picture_url = EXCLUDED.profile_picture_url,
-        access_token = EXCLUDED.access_token,
-        is_active = true,
-        updated_at = NOW()
+        access_token        = EXCLUDED.access_token,
+        is_active           = true,
+        last_sync_at        = NOW(),
+        updated_at          = NOW()
     `
 
-    accountsUrl.searchParams.set("ig_success", profile.username || igUserId)
-    return NextResponse.redirect(accountsUrl)
+    const successUrl = new URL(`/workspace/${workspaceId}/accounts/connecting-instagram`, request.url)
+    successUrl.searchParams.set("success", "1")
+    successUrl.searchParams.set("username", profile.username || igUserId)
+    return NextResponse.redirect(successUrl)
   } catch (err: any) {
-    accountsUrl.searchParams.set("ig_error", encodeURIComponent(err.message || "unexpected_error"))
-    return NextResponse.redirect(accountsUrl)
+    const errorUrl = new URL(`/workspace/${workspaceId}/accounts/connecting-instagram`, request.url)
+    errorUrl.searchParams.set("error", encodeURIComponent(err.message || "unexpected_error"))
+    return NextResponse.redirect(errorUrl)
   }
 }
