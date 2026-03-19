@@ -102,43 +102,89 @@ export async function POST(request: NextRequest) {
       pages.push(...accountsData.data)
     }
 
-    // Step 4: Fallback — buscar via Business Manager (caso a página não seja admin direta no perfil pessoal)
+    // Buscar user_id real para usar como fallback
+    const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
+    const meData = await meRes.json()
+    const userId = meData.id
+    console.log("[v0] meta/process: userId:", userId, "name:", meData.name)
+
+    // Step 4: Fallback A — user_id/accounts (mesmo que /me/accounts mas com ID explícito)
+    if (pages.length === 0 && userId) {
+      console.log("[v0] meta/process step4A: tentando /{userId}/accounts")
+      try {
+        const userAccountsRes = await fetch(
+          `${GRAPH_API}/${userId}/accounts?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+        )
+        const userAccountsData = await userAccountsRes.json()
+        console.log("[v0] meta/process step4A /{userId}/accounts:", userAccountsRes.status, "count:", userAccountsData.data?.length ?? 0, "error:", userAccountsData.error ? JSON.stringify(userAccountsData.error) : "none")
+        if (userAccountsData.data?.length > 0) pages.push(...userAccountsData.data)
+      } catch (e) {
+        console.log("[v0] meta/process step4A erro:", e instanceof Error ? e.message : e)
+      }
+    }
+
+    // Step 4B: Business Manager — owned_pages, client_pages, user_owned_pages
     if (pages.length === 0) {
-      console.log("[v0] meta/process step4: nenhuma página em /me/accounts, tentando Business Manager")
+      console.log("[v0] meta/process step4B: tentando Business Manager")
       try {
         const bizRes = await fetch(`${GRAPH_API}/me/businesses?access_token=${userToken}&limit=25`)
         const bizData = await bizRes.json()
-        console.log("[v0] meta/process step4 /me/businesses:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
+        console.log("[v0] meta/process step4B /me/businesses:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
 
         if (bizData.data && bizData.data.length > 0) {
           for (const biz of bizData.data) {
+            // owned_pages
             const ownedRes = await fetch(
               `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
             )
             const ownedData = await ownedRes.json()
-            console.log("[v0] meta/process step4 owned_pages biz", biz.id, "count:", ownedData.data?.length ?? 0)
+            console.log("[v0] meta/process step4B owned_pages biz", biz.id, ":", ownedData.data?.length ?? 0, "error:", ownedData.error ? JSON.stringify(ownedData.error) : "none")
             if (ownedData.data?.length > 0) pages.push(...ownedData.data)
 
+            // client_pages
             const clientRes = await fetch(
               `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
             )
             const clientData = await clientRes.json()
-            console.log("[v0] meta/process step4 client_pages biz", biz.id, "count:", clientData.data?.length ?? 0)
+            console.log("[v0] meta/process step4B client_pages biz", biz.id, ":", clientData.data?.length ?? 0, "error:", clientData.error ? JSON.stringify(clientData.error) : "none")
             if (clientData.data?.length > 0) pages.push(...clientData.data)
+
+            // user_owned_pages (páginas que o usuário possui dentro do BM)
+            if (userId) {
+              const uopRes = await fetch(
+                `${GRAPH_API}/${biz.id}/user_owned_pages?user_id=${userId}&access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+              )
+              const uopData = await uopRes.json()
+              console.log("[v0] meta/process step4B user_owned_pages biz", biz.id, ":", uopData.data?.length ?? 0, "error:", uopData.error ? JSON.stringify(uopData.error) : "none")
+              if (uopData.data?.length > 0) pages.push(...uopData.data)
+            }
           }
         }
       } catch (e) {
-        console.log("[v0] meta/process step4 Business Manager erro:", e instanceof Error ? e.message : e)
+        console.log("[v0] meta/process step4B erro:", e instanceof Error ? e.message : e)
       }
     }
 
-    // Step 5: Se ainda vazio, retornar erro informativo
+    // Step 4C: Último fallback — buscar páginas via app token (app-level token)
     if (pages.length === 0) {
-      const meRes = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${userToken}`)
-      const meData = await meRes.json()
+      console.log("[v0] meta/process step4C: tentando app token para listar páginas do usuário")
+      try {
+        const appToken = `${appId}|${appSecret}`
+        const appPagesRes = await fetch(
+          `${GRAPH_API}/${userId}/accounts?access_token=${appToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
+        )
+        const appPagesData = await appPagesRes.json()
+        console.log("[v0] meta/process step4C app token pages:", appPagesRes.status, "count:", appPagesData.data?.length ?? 0, "error:", appPagesData.error ? JSON.stringify(appPagesData.error) : "none")
+        if (appPagesData.data?.length > 0) pages.push(...appPagesData.data)
+      } catch (e) {
+        console.log("[v0] meta/process step4C erro:", e instanceof Error ? e.message : e)
+      }
+    }
 
+    // Step 5: Se ainda vazio, retornar erro informativo com diagnóstico
+    if (pages.length === 0) {
       return NextResponse.json({
-        error: `Nenhuma Página do Facebook encontrada para o usuário ${meData.name}. Certifique-se de que você é administrador de pelo menos uma Página do Facebook e que concedeu todas as permissões solicitadas.`,
+        error: `Nenhuma Página do Facebook encontrada para o usuário ${meData.name} (ID: ${userId}). Certifique-se de que você é administrador de pelo menos uma Página do Facebook e que concedeu todas as permissões solicitadas.`,
       }, { status: 400 })
     }
 
