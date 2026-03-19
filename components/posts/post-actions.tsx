@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { MoreHorizontal, Pencil, Trash2, CalendarX, Loader2, Send, CalendarDays } from "lucide-react"
+import { MoreHorizontal, Pencil, Trash2, CalendarX, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Props {
@@ -63,44 +63,6 @@ export function PostActions({ post, className }: Props) {
 
   const isScheduled = post.status === "scheduled"
   const isPublished = post.status === "published"
-  const isDraft = post.status === "draft"
-
-  const [publishDraftOpen, setPublishDraftOpen] = useState(false)
-  const [scheduleDraftOpen, setScheduleDraftOpen] = useState(false)
-  const [draftScheduledAt, setDraftScheduledAt] = useState("")
-
-  const handlePublishDraft = async () => {
-    setLoading(true)
-    setError(null)
-    const res = await fetch(`/api/posts/${post.id}/publish`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scheduleType: "now" }),
-    })
-    const json = await res.json()
-    setLoading(false)
-    if (!res.ok) { setError(json.error || "Erro ao publicar"); return }
-    setPublishDraftOpen(false)
-    router.refresh()
-  }
-
-  const handleScheduleDraft = async () => {
-    if (!draftScheduledAt) { setError("Selecione uma data e hora"); return }
-    setLoading(true)
-    setError(null)
-    const hasTz = /[Z+\-]\d{2}:\d{2}$/.test(draftScheduledAt) || draftScheduledAt.endsWith("Z")
-    const scheduledAtUTC = hasTz ? draftScheduledAt : `${draftScheduledAt}-03:00`
-    const res = await fetch(`/api/posts/${post.id}/publish`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scheduleType: "scheduled", scheduledAt: scheduledAtUTC }),
-    })
-    const json = await res.json()
-    setLoading(false)
-    if (!res.ok) { setError(json.error || "Erro ao agendar"); return }
-    setScheduleDraftOpen(false)
-    router.refresh()
-  }
 
   const minDate = new Date()
   minDate.setMinutes(minDate.getMinutes() + 5)
@@ -153,7 +115,7 @@ export function PostActions({ post, className }: Props) {
     router.refresh()
   }
 
-  if (isPublished && !isDraft) return null
+  if (isPublished) return null
 
   return (
     <>
@@ -168,28 +130,11 @@ export function PostActions({ post, className }: Props) {
             <MoreHorizontal className="w-4 h-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          {isDraft ? (
-            <>
-              <DropdownMenuItem onClick={() => setPublishDraftOpen(true)}>
-                <Send className="w-4 h-4 mr-2" />
-                Publicar agora
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setScheduleDraftOpen(true)}>
-                <CalendarDays className="w-4 h-4 mr-2" />
-                Agendar publicação
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                <Pencil className="w-4 h-4 mr-2" />
-                Editar rascunho
-              </DropdownMenuItem>
-            </>
-          ) : (
-            <DropdownMenuItem onClick={() => setEditOpen(true)}>
-              <Pencil className="w-4 h-4 mr-2" />
-              Editar
-            </DropdownMenuItem>
-          )}
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>
+            <Pencil className="w-4 h-4 mr-2" />
+            Editar
+          </DropdownMenuItem>
           {isScheduled && (
             <DropdownMenuItem onClick={() => setCancelOpen(true)}>
               <CalendarX className="w-4 h-4 mr-2" />
@@ -246,64 +191,6 @@ export function PostActions({ post, className }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Publish draft now */}
-      <AlertDialog open={publishDraftOpen} onOpenChange={setPublishDraftOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Publicar rascunho agora?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O post será publicado imediatamente nas contas selecionadas durante o rascunho.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {error && <p className="text-sm text-destructive px-1">{error}</p>}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={loading}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePublishDraft} disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Publicar agora"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Schedule draft */}
-      <Dialog open={scheduleDraftOpen} onOpenChange={setScheduleDraftOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Agendar rascunho</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-4 py-2">
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Data e hora (horário de Brasília)</label>
-              <input
-                type="datetime-local"
-                min={minDateStr}
-                value={draftScheduledAt}
-                onChange={(e) => setDraftScheduledAt(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setScheduleDraftOpen(false)}
-              disabled={loading}
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleScheduleDraft}
-              disabled={loading || !draftScheduledAt}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarDays className="w-4 h-4" />}
-              Agendar
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

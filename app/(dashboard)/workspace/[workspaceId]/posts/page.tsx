@@ -8,7 +8,6 @@ import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid } from "lucide-r
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
 import { PostActions } from "@/components/posts/post-actions"
-import { VideoThumbnail } from "@/components/posts/video-thumbnail"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -50,16 +49,11 @@ export default async function WorkspacePostsPage({ params }: Props) {
       FROM social_accounts WHERE workspace_id = ${workspaceId} AND is_active = true
     `,
     sql`
-      SELECT p.id, p.content, p.status, p.scheduled_at, p.published_at, p.created_at, p.error_message,
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at, p.error_message,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
-        COUNT(DISTINCT pm.id) FILTER (WHERE pm.media_type != 'cover')::int as media_count,
-        COALESCE(
-          (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id AND pm2.media_type = 'cover' LIMIT 1),
-          (SELECT pm3.url FROM post_media pm3 WHERE pm3.post_id = p.id AND pm3.media_type != 'cover' ORDER BY pm3.order_index ASC LIMIT 1)
-        ) as thumbnail,
-        (SELECT pm4.media_type FROM post_media pm4 WHERE pm4.post_id = p.id AND pm4.media_type != 'cover' ORDER BY pm4.order_index ASC LIMIT 1) as primary_media_type,
-        (SELECT pm5.url FROM post_media pm5 WHERE pm5.post_id = p.id AND pm5.media_type != 'cover' ORDER BY pm5.order_index ASC LIMIT 1) as primary_media_url
+        COUNT(DISTINCT pm.id)::int as media_count,
+        (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
       FROM posts p
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
@@ -113,20 +107,11 @@ export default async function WorkspacePostsPage({ params }: Props) {
                 {/* Thumbnail */}
                 <div className="aspect-square bg-muted relative overflow-hidden">
                   {post.thumbnail ? (
-                    // If thumbnail is a cover image or a regular image, show it directly.
-                    // If the primary media is a video and there's no cover, VideoThumbnail captures a frame.
-                    post.primary_media_type === "video" && post.thumbnail === post.primary_media_url ? (
-                      <VideoThumbnail
-                        videoUrl={post.thumbnail}
-                        className="group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <img
-                        src={post.thumbnail}
-                        alt=""
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    )
+                    <img
+                      src={post.thumbnail}
+                      alt=""
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <ImageIcon className="w-10 h-10 text-muted-foreground/30" />
@@ -167,23 +152,15 @@ export default async function WorkspacePostsPage({ params }: Props) {
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
-                      {(() => {
-                        // Neon may return Date objects or strings — normalize to Date safely
-                        const toUtcDate = (v: unknown): Date => {
-                          if (v instanceof Date) return v
-                          const s = String(v)
-                          return new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
-                        }
-                        const fmt = (d: Date) => new Intl.DateTimeFormat("pt-BR", {
-                          timeZone: "America/Sao_Paulo",
-                          day: "2-digit", month: "short",
-                          hour: "2-digit", minute: "2-digit",
-                        }).format(d)
-                        const dateToShow = post.published_at || post.scheduled_at
-                        const label = post.status === "published" ? "Publicado " : post.scheduled_at ? "Agendado " : ""
-                        if (dateToShow) return label + fmt(toUtcDate(dateToShow))
-                        return fmt(toUtcDate(post.created_at))
-                      })()}
+                      {post.scheduled_at
+                        ? new Intl.DateTimeFormat("pt-BR", {
+                            timeZone: "America/Sao_Paulo",
+                            day: "2-digit", month: "short",
+                            hour: "2-digit", minute: "2-digit",
+                          }).format(new Date(post.scheduled_at))
+                        : new Date(post.created_at).toLocaleDateString("pt-BR", {
+                            day: "2-digit", month: "short",
+                          })}
                     </span>
                     <div className="flex items-center gap-1">
                       <Badge variant={status.variant} className="text-xs">

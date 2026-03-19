@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Instagram, Facebook, Link2, Plus, Trash2, RefreshCw } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
+import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-button"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
-import { AccountAvatar } from "@/components/accounts/account-avatar"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -67,6 +67,7 @@ export default async function AccountsPage({ params }: Props) {
           <p className="text-muted-foreground text-sm mt-1">{ws.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          <ConnectInstagramButton workspaceId={workspaceId} />
           <ConnectMetaButton workspaceId={workspaceId} />
         </div>
       </div>
@@ -81,8 +82,8 @@ export default async function AccountsPage({ params }: Props) {
             <div>
               <p className="text-sm font-medium text-foreground">Como conectar suas contas</p>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Clique em <strong>"Conectar com Facebook"</strong> para autorizar o acesso. O sistema detecta automaticamente suas Páginas do Facebook e as contas Instagram Business vinculadas a elas.
-                Para conectar um Instagram, ele precisa estar vinculado a uma Página do Facebook no Meta Business Suite.
+                <strong>Via Facebook:</strong> conecta Páginas do Facebook e contas Instagram Business vinculadas ao Meta Business Suite.<br />
+                <strong>Instagram direto:</strong> conecta contas Instagram Creator/pessoal sem precisar de uma Página do Facebook. Use o mesmo App ID do Facebook — o Instagram usa o mesmo sistema OAuth da Meta.
               </p>
             </div>
           </div>
@@ -94,7 +95,12 @@ export default async function AccountsPage({ params }: Props) {
           icon={Link2}
           title="Nenhuma conta conectada"
           description="Conecte seu Facebook para descobrir automaticamente suas páginas e contas do Instagram Business."
-          action={<ConnectMetaButton workspaceId={workspaceId} />}
+          action={
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              <ConnectInstagramButton workspaceId={workspaceId} />
+              <ConnectMetaButton workspaceId={workspaceId} />
+            </div>
+          }
         />
       ) : (
         <div className="flex flex-col gap-6">
@@ -145,11 +151,15 @@ function AccountCard({ account, config }: { account: any; config: any }) {
       <CardContent className="py-3 px-4">
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-full ${config.colorClass} flex items-center justify-center shrink-0`}>
-            <AccountAvatar
-              src={account.profile_picture_url}
-              alt={account.account_name}
-              fallback={config.icon}
-            />
+            {account.profile_picture_url ? (
+              <img
+                src={account.profile_picture_url}
+                alt={account.account_name}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              config.icon
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -28,14 +29,7 @@ import {
   Loader2,
   CalendarDays,
   Send,
-  Film,
-  GripVertical,
-  BookmarkIcon,
-  CheckCircle2,
-  Plus,
-  Trash2,
 } from "lucide-react"
-import { upload } from "@vercel/blob/client"
 import { cn } from "@/lib/utils"
 
 const schema = z.object({
@@ -56,12 +50,6 @@ interface Account {
   profile_picture_url?: string
 }
 
-interface UploadedMedia {
-  url: string
-  type: string
-  name: string
-}
-
 interface Props {
   workspaceId: string
   accounts: Account[]
@@ -75,263 +63,157 @@ const postTypeOptions = [
   { value: "story", label: "Story" },
 ]
 
-const MAX_SIZE_MB = 15
-const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
-
-// Accept attribute per post type
-const getAccept = (postType: string) => {
-  if (postType === "reel") return "video/*"
-  return "image/*,video/*"
-}
-
-// Upload directly from browser to Vercel Blob (no serverless payload limit)
-async function uploadFileWithProgress(
-  file: File,
-  onProgress: (pct: number) => void
-): Promise<UploadedMedia> {
-  const ext = file.name.split(".").pop() || "bin"
-  const pathname = `posts/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-  const blob = await upload(pathname, file, {
-    access: "public",
-    handleUploadUrl: "/api/media/upload",
-    onUploadProgress: ({ percentage }) => onProgress(Math.round(percentage)),
-  })
-  return {
-    url: blob.url,
-    type: file.type.startsWith("video") ? "video" : "image",
-    name: file.name,
-  }
-}
 
 export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
-  // Uploaded media state
-  const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([])
+  const [loading, setLoading] = useState(false)
+  const [mediaFiles, setMediaFiles] = useState<File[]>([])
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([])
-
-  // Upload progress state
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [uploadingFileName, setUploadingFileName] = useState("")
-
-  // Reel cover image
-  const [coverPreview, setCoverPreview] = useState<string | null>(null)
-  const [uploadedCover, setUploadedCover] = useState<UploadedMedia | null>(null)
-  const [uploadingCover, setUploadingCover] = useState(false)
-  const [coverProgress, setCoverProgress] = useState(0)
-
   const [charCount, setCharCount] = useState(0)
-
-  // Drag-and-drop state for carousel
-  const dragIndex = useRef<number | null>(null)
-
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const coverInputRef = useRef<HTMLInputElement>(null)
+
+  const MAX_SIZE_MB = 15
+  const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
   const { register, handleSubmit, watch, setValue, formState: { errors }, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { postType: "feed", scheduleType: "now", accountIds: [] },
+    defaultValues: {
+      postType: "feed",
+      scheduleType: "now",
+      accountIds: [],
+    },
   })
 
   const scheduleType = watch("scheduleType")
   const accountIds = watch("accountIds") || []
   const postType = watch("postType")
 
-  // Multiple scheduled dates support
-  const [scheduledDates, setScheduledDates] = useState<string[]>([""])
-
-  const addScheduledDate = () => setScheduledDates((prev) => [...prev, ""])
-  const removeScheduledDate = (idx: number) => setScheduledDates((prev) => prev.filter((_, i) => i !== idx))
-  const updateScheduledDate = (idx: number, value: string) =>
-    setScheduledDates((prev) => prev.map((d, i) => (i === idx ? value : d)))
-
-  // ── Drag-and-drop reorder (carousel) ──────────────────────────────────────
-  const handleDragStart = (idx: number) => { dragIndex.current = idx }
-
-  const handleDrop = (targetIdx: number) => {
-    const from = dragIndex.current
-    if (from === null || from === targetIdx) return
-    dragIndex.current = null
-
-    setUploadedMedia((prev) => {
-      const arr = [...prev]
-      const [item] = arr.splice(from, 1)
-      arr.splice(targetIdx, 0, item)
-      return arr
-    })
-    setMediaPreviews((prev) => {
-      const arr = [...prev]
-      const [item] = arr.splice(from, 1)
-      arr.splice(targetIdx, 0, item)
-      return arr
-    })
-  }
-
-  const handleDragOver = (e: React.DragEvent) => e.preventDefault()
-
-  // ── File selection → immediate upload ──────────────────────────────────────
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
-    e.target.value = ""
 
+    // Validate size before accepting
     const oversized = files.find((f) => f.size > MAX_SIZE_BYTES)
     if (oversized) {
       setError(`"${oversized.name}" excede o limite de ${MAX_SIZE_MB}MB.`)
+      e.target.value = ""
       return
     }
-    setError(null)
 
+    setError(null)
     const maxFiles = postType === "carousel" ? 10 : 1
-    const toUpload = files.slice(0, maxFiles - uploadedMedia.length)
+    const newFiles = files.slice(0, maxFiles - mediaFiles.length)
 
-    for (const file of toUpload) {
-      setUploading(true)
-      setUploadProgress(0)
-      setUploadingFileName(file.name)
-
-      const localPreview = URL.createObjectURL(file)
-      setMediaPreviews((prev) => [...prev, localPreview].slice(0, maxFiles))
-
-      try {
-        const uploaded = await uploadFileWithProgress(file, (pct) => setUploadProgress(pct))
-        setUploadedMedia((prev) => [...prev, uploaded].slice(0, maxFiles))
-      } catch (err: any) {
-        setError(err.message || "Erro ao fazer upload da mídia")
-        setMediaPreviews((prev) => prev.filter((p) => p !== localPreview))
-      } finally {
-        setUploading(false)
-        setUploadProgress(0)
-        setUploadingFileName("")
-      }
-    }
-  }
-
-  // ── Cover image for reels ───────────────────────────────────────────────────
-  const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ""
-    if (file.size > MAX_SIZE_BYTES) {
-      setError(`Capa excede o limite de ${MAX_SIZE_MB}MB.`)
-      return
-    }
-    setError(null)
-    setCoverPreview(URL.createObjectURL(file))
-    setUploadingCover(true)
-    setCoverProgress(0)
-    try {
-      const uploaded = await uploadFileWithProgress(file, (pct) => setCoverProgress(pct))
-      setUploadedCover(uploaded)
-    } catch (err: any) {
-      setError(err.message || "Erro ao fazer upload da capa")
-      setCoverPreview(null)
-    } finally {
-      setUploadingCover(false)
-      setCoverProgress(0)
-    }
+    setMediaFiles((prev) => [...prev, ...newFiles].slice(0, maxFiles))
+    const previews = newFiles.map((f) => URL.createObjectURL(f))
+    setMediaPreviews((prev) => [...prev, ...previews].slice(0, maxFiles))
   }
 
   const removeMedia = (idx: number) => {
-    setUploadedMedia((prev) => prev.filter((_, i) => i !== idx))
+    setMediaFiles((prev) => prev.filter((_, i) => i !== idx))
     setMediaPreviews((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  const removeCover = () => {
-    setCoverPreview(null)
-    setUploadedCover(null)
+  const toggleAccount = (accountId: string) => {
+    const current = accountIds
+    if (current.includes(accountId)) {
+      setValue("accountIds", current.filter((id) => id !== accountId))
+    } else {
+      setValue("accountIds", [...current, accountId])
+    }
   }
 
-  const resetForm = () => {
-    reset()
-    setUploadedMedia([])
-    setMediaPreviews([])
-    setCoverPreview(null)
-    setUploadedCover(null)
-    setError(null)
-    setCharCount(0)
-    setScheduledDates([""])
-  }
-
-  const handleClose = (v: boolean) => {
-    if (uploading || (submitting && scheduleType !== "now")) return
-    setOpen(v)
-    if (!v) resetForm()
-  }
-
-  // ── Submit ─────────────────────────────────────────────────────────────────
   const onSubmit = async (data: FormData) => {
-    if (uploading || uploadingCover) {
-      setError("Aguarde o upload da mídia terminar antes de publicar.")
-      return
-    }
-    setSubmitting(true)
+    setLoading(true)
     setError(null)
-
-    const basePayload = {
-      workspaceId,
-      content: data.content || "",
-      postType: data.postType,
-      accountIds: data.accountIds,
-      media: uploadedMedia,
-      coverMedia: uploadedCover || undefined,
-    }
-
-    // For "now" posts: show success screen then close, publish in background
-    if (data.scheduleType === "now") {
-      setPublishingSuccess(true)
-      setSubmitting(false)
-      fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...basePayload, scheduleType: "now" }),
-      }).then(() => router.refresh()).catch(() => router.refresh())
-      setTimeout(() => {
-        setPublishingSuccess(false)
-        setOpen(false)
-        resetForm()
-      }, 3000)
-      return
-    }
-
-    // For scheduled posts: one request per date
-    const validDates = scheduledDates.filter((d) => d.trim() !== "")
-    if (validDates.length === 0) {
-      setError("Informe ao menos uma data de agendamento.")
-      setSubmitting(false)
-      return
-    }
 
     try {
-      const results = await Promise.all(
-        validDates.map((date) =>
-          fetch("/api/posts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...basePayload, scheduleType: "scheduled", scheduledAt: date }),
-          }).then((r) => r.json().then((json) => ({ ok: r.ok, json })))
-        )
-      )
-      const failed = results.filter((r) => !r.ok)
-      if (failed.length > 0) {
-        setError(failed.map((f) => f.json.error || "Erro ao agendar").join("; "))
+      // Upload media with progress tracking via XMLHttpRequest
+      const uploadedMedia: Array<{ url: string; type: string; name: string }> = []
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const file = mediaFiles[i]
+        setUploadProgress(0)
+
+        const uploadData = await new Promise<any>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          const formData = new FormData()
+          formData.append("file", file)
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100)
+              setUploadProgress(pct)
+            }
+          }
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try { resolve(JSON.parse(xhr.responseText)) }
+              catch { reject(new Error("Resposta inválida do servidor")) }
+            } else {
+              try {
+                const err = JSON.parse(xhr.responseText)
+                reject(new Error(err.error || `Erro ${xhr.status} ao fazer upload`))
+              } catch {
+                reject(new Error(`Erro ${xhr.status} ao fazer upload`))
+              }
+            }
+          }
+          xhr.onerror = () => reject(new Error("Falha na conexão durante o upload"))
+          xhr.ontimeout = () => reject(new Error("Tempo esgotado no upload. Tente um arquivo menor."))
+          xhr.timeout = 120000 // 2 min timeout
+
+          xhr.open("POST", "/api/media/upload")
+          xhr.send(formData)
+        })
+
+        uploadedMedia.push({
+          url: uploadData.url,
+          type: uploadData.type || (file.type.startsWith("video") ? "video" : "image"),
+          name: file.name,
+        })
+      }
+      setUploadProgress(0)
+
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId,
+          content: data.content || "",
+          postType: data.postType,
+          scheduleType: data.scheduleType,
+          scheduledAt: data.scheduledAt,
+          accountIds: data.accountIds,
+          media: uploadedMedia,
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!res.ok) {
+        setError(json.error || "Erro ao criar post")
+        setLoading(false)
         return
       }
+
       setOpen(false)
-      resetForm()
+      reset()
+      setMediaFiles([])
+      setMediaPreviews([])
       router.refresh()
-    } catch (err: any) {
-      setError(err.message || "Erro inesperado. Tente novamente.")
-    } finally {
-      setSubmitting(false)
+    } catch {
+      setError("Erro inesperado. Tente novamente.")
+      setLoading(false)
     }
   }
 
+  // Convert a Date to "YYYY-MM-DDTHH:mm" in America/Sao_Paulo timezone
   const toBrasiliaLocal = (date: Date): string => {
+    // Get the date parts in Brasília timezone
     const fmt = new Intl.DateTimeFormat("sv-SE", {
       timeZone: "America/Sao_Paulo",
       year: "numeric", month: "2-digit", day: "2-digit",
@@ -344,81 +226,10 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
   minDate.setMinutes(minDate.getMinutes() + 5)
   const minDateStr = toBrasiliaLocal(minDate)
 
-  const isUploading = uploading || uploadingCover
-  const canSubmit = !isUploading && !submitting && accounts.length > 0
-
-  const [publishingSuccess, setPublishingSuccess] = useState(false)
-
-  // ── Save as draft — no accounts required, no publishing ───────────────────
-  const [savingDraft, setSavingDraft] = useState(false)
-
-  const handleSaveDraft = async () => {
-    if (isUploading) {
-      setError("Aguarde o upload da mídia terminar antes de salvar.")
-      return
-    }
-    // Drafts can have no accounts — save with whatever is filled
-    const content = watch("content") || ""
-    setSavingDraft(true)
-    setError(null)
-    try {
-      const res = await fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId,
-          content,
-          postType: watch("postType"),
-          scheduleType: "draft",
-          accountIds: watch("accountIds") || [],
-          media: uploadedMedia,
-          coverMedia: uploadedCover || undefined,
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        setError(json.error || "Erro ao salvar rascunho")
-        return
-      }
-      setOpen(false)
-      resetForm()
-      router.refresh()
-    } catch (err: any) {
-      setError(err.message || "Erro inesperado.")
-    } finally {
-      setSavingDraft(false)
-    }
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={setOpen}>
       {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0">
-        {publishingSuccess ? (
-          <div className="flex flex-col items-center justify-center gap-6 py-16 px-8 text-center">
-            <div className="flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30">
-              <CheckCircle2 className="w-10 h-10 text-green-600 dark:text-green-400" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <h3 className="text-xl font-semibold">Publicando em segundo plano</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                Seu post está sendo publicado nas contas selecionadas. Você pode continuar usando o sistema normalmente.
-              </p>
-            </div>
-            <p className="text-xs text-muted-foreground">Esta janela fechará automaticamente em instantes.</p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPublishingSuccess(false)
-                setOpen(false)
-                resetForm()
-              }}
-            >
-              Fechar agora
-            </Button>
-          </div>
-        ) : (
-        <>
         <DialogHeader className="px-6 pt-6 pb-0">
           <DialogTitle>Criar novo post</DialogTitle>
         </DialogHeader>
@@ -426,7 +237,6 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
         <ScrollArea className="flex-1">
           <form onSubmit={handleSubmit(onSubmit)} id="post-form">
             <div className="px-6 py-4 flex flex-col gap-5">
-
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -441,7 +251,7 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                 </Alert>
               ) : (
                 <>
-                  {/* Publicar em */}
+                  {/* Platform Selection */}
                   <div className="flex flex-col gap-2">
                     <Label>Publicar em</Label>
                     <AccountSelector
@@ -452,18 +262,12 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                     />
                   </div>
 
-                  {/* Formato */}
+                  {/* Post Type */}
                   <div className="flex flex-col gap-2">
                     <Label>Formato do post</Label>
                     <Select
                       defaultValue="feed"
-                      onValueChange={(v) => {
-                        setValue("postType", v as any)
-                        setUploadedMedia([])
-                        setMediaPreviews([])
-                        setCoverPreview(null)
-                        setUploadedCover(null)
-                      }}
+                      onValueChange={(v) => setValue("postType", v as any)}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -478,101 +282,43 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                     </Select>
                   </div>
 
-                  {/* Mídia principal */}
+                  {/* Media Upload */}
                   <div className="flex flex-col gap-2">
                     <Label>
                       Mídia
                       <span className="text-xs text-muted-foreground ml-2 font-normal">
-                        máx. {MAX_SIZE_MB}MB
-                        {postType === "reel" && " · somente vídeo"}
-                        {(postType === "feed" || postType === "story") && " · imagem ou vídeo"}
-                        {postType === "carousel" && " · imagens e vídeos · até 10 itens"}
+                        máx. {MAX_SIZE_MB}MB · imagem ou vídeo
+                        {postType === "carousel" && " · até 10 itens"}
                       </span>
                     </Label>
 
-                    {/* Previews — with drag-and-drop for carousel */}
                     {mediaPreviews.length > 0 && (
-                      <div className={cn("flex gap-2", postType === "carousel" ? "flex-wrap" : "")}>
-                        {mediaPreviews.map((src, idx) => {
-                          const isVideo = uploadedMedia[idx]?.type === "video"
-                          return (
-                            <div
-                              key={idx}
-                              draggable={postType === "carousel"}
-                              onDragStart={() => handleDragStart(idx)}
-                              onDrop={() => handleDrop(idx)}
-                              onDragOver={handleDragOver}
-                              className={cn(
-                                "relative rounded-lg overflow-hidden border border-border group bg-black",
-                                postType === "carousel"
-                                  ? "w-20 h-20 cursor-grab active:cursor-grabbing"
-                                  : "w-20 h-20"
-                              )}
+                      <div className="flex flex-wrap gap-2">
+                        {mediaPreviews.map((src, idx) => (
+                          <div key={idx} className="relative w-20 h-20 rounded-lg overflow-hidden border border-border group">
+                            <img src={src} alt="" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeMedia(idx)}
+                              className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                             >
-                              {isVideo ? (
-                                <video src={src} className="w-full h-full object-cover" muted />
-                              ) : (
-                                <img src={src} alt="" className="w-full h-full object-cover" />
-                              )}
-                              {postType === "carousel" && (
-                                <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <GripVertical className="w-3 h-3 text-white drop-shadow" />
-                                </div>
-                              )}
-                              {/* Media type badge */}
-                              <div className="absolute bottom-1 left-1">
-                                {isVideo
-                                  ? <Film className="w-3 h-3 text-white drop-shadow" />
-                                  : <ImageIcon className="w-3 h-3 text-white drop-shadow" />
-                                }
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => removeMedia(idx)}
-                                className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <X className="w-3 h-3 text-white" />
-                              </button>
-                              {/* Position number for carousel */}
-                              {postType === "carousel" && (
-                                <div className="absolute bottom-1 right-1 w-4 h-4 bg-black/60 rounded-full flex items-center justify-center">
-                                  <span className="text-white text-[9px] font-bold">{idx + 1}</span>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {/* Upload progress */}
-                    {uploading && (
-                      <div className="flex flex-col gap-2 p-4 border-2 border-dashed border-primary/30 rounded-xl bg-primary/5">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                          <span className="truncate">Enviando <strong>{uploadingFileName}</strong>...</span>
-                          <span className="ml-auto font-medium text-primary">{uploadProgress}%</span>
-                        </div>
-                        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary transition-all duration-150 rounded-full"
-                            style={{ width: `${uploadProgress}%` }}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground">Aguarde o upload terminar para continuar.</p>
+                              <X className="w-3 h-3 text-white" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     )}
 
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept={getAccept(postType)}
+                      accept={postType === "reel" ? "video/*" : "image/*,video/*"}
                       multiple={postType === "carousel"}
                       className="hidden"
                       onChange={handleFileChange}
                     />
 
-                    {!uploading && (postType !== "carousel" ? uploadedMedia.length < 1 : uploadedMedia.length < 10) && (
+                    {(postType !== "carousel" ? mediaPreviews.length < 1 : mediaPreviews.length < 10) && (
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
@@ -580,95 +326,49 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                       >
                         <Upload className="w-6 h-6" />
                         <span className="text-sm">
-                          {postType === "reel"
-                            ? "Selecionar vídeo do reel"
-                            : postType === "story"
-                            ? "Selecionar imagem ou vídeo"
-                            : postType === "carousel"
-                            ? `Adicionar mídia (${uploadedMedia.length}/10)`
-                            : "Selecionar mídia"}
-                        </span>
-                        <span className="text-xs text-muted-foreground/70">
-                          {postType === "reel" ? "MP4, MOV, AVI" : "JPG, PNG, GIF, MP4, MOV"}
+                          {postType === "reel" ? "Selecionar vídeo" : "Selecionar imagem"}
                         </span>
                       </button>
                     )}
                   </div>
 
-                  {/* Capa do Reel */}
-                  {postType === "reel" && (
-                    <div className="flex flex-col gap-2">
-                      <Label>
-                        Imagem de capa
-                        <span className="text-xs text-muted-foreground ml-2 font-normal">
-                          opcional · JPG ou PNG · máx. {MAX_SIZE_MB}MB
-                        </span>
-                      </Label>
-                      {coverPreview ? (
-                        <div className="flex items-center gap-3">
-                          <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-border group">
-                            <img src={coverPreview} alt="Capa do reel" className="w-full h-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={removeCover}
-                              className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <X className="w-3 h-3 text-white" />
-                            </button>
-                          </div>
-                          {uploadingCover ? (
-                            <div className="flex-1 flex flex-col gap-1">
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Loader2 className="w-3 h-3 animate-spin" /> Enviando capa...
-                                </span>
-                                <span>{coverProgress}%</span>
-                              </div>
-                              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-primary transition-all rounded-full" style={{ width: `${coverProgress}%` }} />
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Capa pronta</span>
-                          )}
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => coverInputRef.current?.click()}
-                          className="flex items-center gap-2 border border-dashed border-border rounded-xl px-4 py-3 text-sm text-muted-foreground hover:border-primary/40 hover:text-primary transition-all w-fit"
-                        >
-                          <Film className="w-4 h-4" />
-                          Escolher imagem de capa
-                        </button>
-                      )}
-                      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
-                    </div>
-                  )}
-
-                  {/* Legenda — não exibida para stories */}
-                  {postType !== "story" && (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <Label>Legenda</Label>
-                        <span className={cn("text-xs", charCount > 2000 ? "text-destructive" : "text-muted-foreground")}>
-                          {charCount}/2200
-                        </span>
+                  {/* Upload progress bar */}
+                  {loading && uploadProgress > 0 && uploadProgress < 100 && (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Enviando mídia...</span>
+                        <span>{uploadProgress}%</span>
                       </div>
-                      <Textarea
-                        placeholder="Escreva sua legenda..."
-                        className="resize-none min-h-[100px]"
-                        {...register("content", {
-                          onChange: (e) => setCharCount(e.target.value.length),
-                        })}
-                      />
-                      {errors.content && (
-                        <span className="text-xs text-destructive">{errors.content.message}</span>
-                      )}
+                      <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-200 rounded-full"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
                     </div>
                   )}
 
-                  {/* Agendamento */}
+                  {/* Caption — not shown for stories */}
+                  {postType !== "story" && <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Legenda</Label>
+                      <span className={cn("text-xs", charCount > 2000 ? "text-destructive" : "text-muted-foreground")}>
+                        {charCount}/2200
+                      </span>
+                    </div>
+                    <Textarea
+                      placeholder="Escreva sua legenda..."
+                      className="resize-none min-h-[100px]"
+                      {...register("content", {
+                        onChange: (e) => setCharCount(e.target.value.length),
+                      })}
+                    />
+                    {errors.content && (
+                      <span className="text-xs text-destructive">{errors.content.message}</span>
+                    )}
+                  </div>}
+
+                  {/* Schedule */}
                   <div className="flex flex-col gap-3">
                     <Label>Publicação</Label>
                     <Tabs
@@ -687,50 +387,20 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
                       </TabsList>
                       <TabsContent value="now">
                         <p className="text-sm text-muted-foreground mt-2">
-                          O modal será fechado imediatamente e a publicação ocorre em segundo plano.
+                          O post será publicado imediatamente após a confirmação.
                         </p>
                       </TabsContent>
                       <TabsContent value="scheduled" className="mt-3">
-                        <div className="flex flex-col gap-2">
-                          <Label>Data e hora (horário de Brasília)</Label>
-                          <div className="flex flex-col gap-2">
-                            {scheduledDates.map((date, idx) => (
-                              <div key={idx} className="flex items-center gap-2">
-                                <Input
-                                  type="datetime-local"
-                                  min={minDateStr}
-                                  value={date}
-                                  onChange={(e) => updateScheduledDate(idx, e.target.value)}
-                                  className="flex-1"
-                                />
-                                {scheduledDates.length > 1 && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="shrink-0 text-muted-foreground hover:text-destructive"
-                                    onClick={() => removeScheduledDate(idx)}
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="w-fit gap-1.5 mt-1"
-                            onClick={addScheduledDate}
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Adicionar data
-                          </Button>
-                          {scheduledDates.length > 1 && (
-                            <p className="text-xs text-muted-foreground">
-                              Serão criados {scheduledDates.filter(d => d).length} agendamentos para este post.
-                            </p>
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor="scheduledAt">Data e hora</Label>
+                          <Input
+                            id="scheduledAt"
+                            type="datetime-local"
+                            min={minDateStr}
+                            {...register("scheduledAt")}
+                          />
+                          {errors.scheduledAt && (
+                            <span className="text-xs text-destructive">{errors.scheduledAt.message}</span>
                           )}
                         </div>
                       </TabsContent>
@@ -742,66 +412,34 @@ export function CreatePostDialog({ workspaceId, accounts, children }: Props) {
           </form>
         </ScrollArea>
 
-        <div className="flex justify-between gap-3 px-6 py-4 border-t border-border bg-muted/30">
-          {/* Draft button — always visible when there's something to save */}
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleSaveDraft}
-            disabled={isUploading || savingDraft || submitting || (uploadedMedia.length === 0 && !watch("content"))}
-            className="gap-2 text-muted-foreground hover:text-foreground"
-          >
-            {savingDraft ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <BookmarkIcon className="w-4 h-4" />
-            )}
-            Salvar rascunho
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-border bg-muted/30">
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            Cancelar
           </Button>
-
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleClose(false)}
-              disabled={submitting || uploading || savingDraft}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              form="post-form"
-              disabled={!canSubmit || savingDraft}
-              className="gap-2 min-w-32"
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Enviando mídia...
-                </>
-              ) : submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Agendando...
-                </>
-              ) : scheduleType === "now" ? (
-                <>
-                  <Send className="w-4 h-4" />
-                  Publicar
-                </>
-              ) : (
-                <>
-                  <CalendarDays className="w-4 h-4" />
-                  {scheduledDates.filter(d => d).length > 1
-                    ? `Agendar ${scheduledDates.filter(d => d).length}x`
-                    : "Agendar"}
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            form="post-form"
+            disabled={loading || accounts.length === 0}
+            className="gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {scheduleType === "now" ? "Publicando..." : "Agendando..."}
+              </>
+            ) : scheduleType === "now" ? (
+              <>
+                <Send className="w-4 h-4" />
+                Publicar
+              </>
+            ) : (
+              <>
+                <CalendarDays className="w-4 h-4" />
+                Agendar
+              </>
+            )}
+          </Button>
         </div>
-        </>
-        )}
       </DialogContent>
     </Dialog>
   )

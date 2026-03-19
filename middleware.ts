@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-
-const COOKIE_NAME = "socialdog_session"
+import { COOKIE_NAME } from "@/lib/auth"
 
 const protectedPaths = ["/dashboard", "/workspace"]
 const authPaths = ["/login", "/register"]
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
 

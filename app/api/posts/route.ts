@@ -76,9 +76,8 @@ async function publishToInstagram(item: {
   media_urls: string[] | null
   media_types: string[] | null
   post_type: string
-  cover_url?: string | null
 }): Promise<string> {
-  const { access_token, account_id, content, media_urls, media_types, post_type, cover_url } = item
+  const { access_token, account_id, content, media_urls, media_types, post_type } = item
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
@@ -105,10 +104,6 @@ async function publishToInstagram(item: {
     }
     if (!isStory && content) {
       containerBody.caption = content
-    }
-    // Reel cover image — Instagram accepts cover_url for REELS
-    if (isReel && cover_url) {
-      containerBody.cover_url = cover_url
     }
 
     const containerRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
@@ -203,11 +198,9 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media, coverMedia } = body
+  const { workspaceId, content, postType, scheduleType, scheduledAt, accountIds, media } = body
 
-  const isDraft = scheduleType === "draft"
-  // Drafts don't require accounts — all other types do
-  if (!workspaceId || (!isDraft && (!accountIds || accountIds.length === 0))) {
+  if (!workspaceId || !accountIds || accountIds.length === 0) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
   }
 
@@ -230,12 +223,12 @@ export async function POST(request: NextRequest) {
   }
 
   const publishNow = scheduleType === "now"
-  const postStatus = isDraft ? "draft" : publishNow ? "publishing" : "scheduled"
 
   try {
+    // Create post — status starts as "publishing" if now, "scheduled" if later
     const post = await sql`
       INSERT INTO posts (id, workspace_id, content, status, scheduled_at, created_by, created_at, updated_at)
-      VALUES (gen_random_uuid(), ${workspaceId}, ${content}, ${postStatus}, ${finalScheduledAt}, ${session.user.id}, NOW(), NOW())
+      VALUES (gen_random_uuid(), ${workspaceId}, ${content}, ${publishNow ? "publishing" : "scheduled"}, ${finalScheduledAt}, ${session.user.id}, NOW(), NOW())
       RETURNING id
     `
     const postId = post[0].id
@@ -254,19 +247,6 @@ export async function POST(request: NextRequest) {
         savedMediaUrls.push(m.url)
         savedMediaTypes.push(mediaType)
       }
-    }
-
-    // Save reel cover as media_type = 'image' with order_index = -1 (negative index identifies it as cover)
-    if (coverMedia?.url) {
-      await sql`
-        INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
-        VALUES (gen_random_uuid(), ${postId}, ${coverMedia.url}, 'image', -1, NOW())
-      `
-    }
-
-    // Drafts have no targets and are never published — return early
-    if (isDraft) {
-      return NextResponse.json({ id: postId, status: "draft" })
     }
 
     // Create post_targets and collect account info for immediate publishing
@@ -319,14 +299,13 @@ export async function POST(request: NextRequest) {
               media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
               media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
             })
-  } else if (target.platform === "instagram") {
-  platformPostId = await publishToInstagram({
-  access_token: target.accessToken,
-  account_id: target.accountIdMeta,
-  content,
-  media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
-  media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
-  cover_url: coverMedia?.url ?? null,
+          } else if (target.platform === "instagram") {
+            platformPostId = await publishToInstagram({
+              access_token: target.accessToken,
+              account_id: target.accountIdMeta,
+              content,
+              media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
+              media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
               post_type: postType,
             })
           }

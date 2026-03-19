@@ -7,7 +7,6 @@ const nextConfig = {
     unoptimized: true,
   },
   serverExternalPackages: ["bcryptjs"],
-  cleanDistDir: true,
 }
 
 export default nextConfig
