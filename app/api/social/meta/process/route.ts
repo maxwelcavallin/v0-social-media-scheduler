@@ -62,12 +62,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Configuração do app Facebook ausente." }, { status: 500 })
   }
 
+  console.log("[v0] meta/process: iniciando. workspaceId:", workspaceId, "redirectUri:", redirectUri)
+
   try {
     // Step 1: Exchange code for short-lived token
-    const tokenRes = await fetch(
-      `${GRAPH_API}/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
-    )
+    const tokenUrl = `${GRAPH_API}/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
+    console.log("[v0] meta/process step1: trocando code. redirect_uri:", redirectUri)
+    const tokenRes = await fetch(tokenUrl)
     const tokenData = await tokenRes.json()
+    console.log("[v0] meta/process step1 status:", tokenRes.status, "error:", tokenData.error ? JSON.stringify(tokenData.error) : "none")
 
     if (tokenData.error) {
       return NextResponse.json(
@@ -83,6 +86,7 @@ export async function POST(request: NextRequest) {
       `${GRAPH_API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortToken}`
     )
     const longData = await longRes.json()
+    console.log("[v0] meta/process step2 long-lived:", longRes.status, "error:", longData.error ? JSON.stringify(longData.error) : "none")
     const userToken = longData.access_token || shortToken
 
     // Step 3: Try /me/accounts first (pages linked to personal profile)
@@ -92,6 +96,7 @@ export async function POST(request: NextRequest) {
       `${GRAPH_API}/me/accounts?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
     )
     const accountsData = await accountsRes.json()
+    console.log("[v0] meta/process step3 /me/accounts:", accountsRes.status, "pages found:", accountsData.data?.length ?? 0, "error:", accountsData.error ? JSON.stringify(accountsData.error) : "none")
 
     if (accountsData.data && accountsData.data.length > 0) {
       pages.push(...accountsData.data)
@@ -99,29 +104,31 @@ export async function POST(request: NextRequest) {
 
     // Step 4: Fallback — buscar via Business Manager (caso a página não seja admin direta no perfil pessoal)
     if (pages.length === 0) {
+      console.log("[v0] meta/process step4: nenhuma página em /me/accounts, tentando Business Manager")
       try {
         const bizRes = await fetch(`${GRAPH_API}/me/businesses?access_token=${userToken}&limit=25`)
         const bizData = await bizRes.json()
+        console.log("[v0] meta/process step4 /me/businesses:", bizRes.status, "count:", bizData.data?.length ?? 0, "error:", bizData.error ? JSON.stringify(bizData.error) : "none")
 
         if (bizData.data && bizData.data.length > 0) {
           for (const biz of bizData.data) {
-            // Owned pages
             const ownedRes = await fetch(
               `${GRAPH_API}/${biz.id}/owned_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
             )
             const ownedData = await ownedRes.json()
+            console.log("[v0] meta/process step4 owned_pages biz", biz.id, "count:", ownedData.data?.length ?? 0)
             if (ownedData.data?.length > 0) pages.push(...ownedData.data)
 
-            // Client pages
             const clientRes = await fetch(
               `${GRAPH_API}/${biz.id}/client_pages?access_token=${userToken}&limit=100&fields=id,name,access_token,picture{url},instagram_business_account{id,name,username,profile_picture_url}`
             )
             const clientData = await clientRes.json()
+            console.log("[v0] meta/process step4 client_pages biz", biz.id, "count:", clientData.data?.length ?? 0)
             if (clientData.data?.length > 0) pages.push(...clientData.data)
           }
         }
-      } catch {
-        // Business Manager não disponível — ignorar silenciosamente
+      } catch (e) {
+        console.log("[v0] meta/process step4 Business Manager erro:", e instanceof Error ? e.message : e)
       }
     }
 
@@ -136,6 +143,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6: Save pages and linked Instagram accounts
+    console.log("[v0] meta/process step6: salvando", pages.length, "páginas")
     const saved: { platform: string; name: string }[] = []
 
     for (const page of pages) {

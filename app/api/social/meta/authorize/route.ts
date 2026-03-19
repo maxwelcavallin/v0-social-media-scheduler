@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
       "pages_manage_posts",
       "instagram_basic",
       "instagram_content_publish",
+      "instagram_manage_insights",
       "business_management",
     ].join(","),
     response_type: "code",
