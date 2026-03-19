@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
       code,
     })
 
+    console.log("[v0] ig-callback step1 body enviado:", tokenBody.toString().replace(appSecret, "***"))
+
     const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
