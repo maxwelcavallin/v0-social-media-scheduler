@@ -12,30 +12,38 @@ export async function GET(request: NextRequest) {
   const rawState = searchParams.get("state")
   const error = searchParams.get("error")
 
+  console.log("[v0] ig-callback: recebido. code:", !!code, "state:", rawState?.slice(0, 30), "error:", error)
+
   let workspaceId = ""
 
   try {
     const decoded = JSON.parse(atob(rawState || ""))
     workspaceId = decoded.workspaceId || ""
+    console.log("[v0] ig-callback: workspaceId decodificado:", workspaceId)
   } catch {
     workspaceId = rawState || ""
+    console.log("[v0] ig-callback: state raw usado como workspaceId:", workspaceId)
   }
 
   const accountsUrl = new URL(`/workspace/${workspaceId}/accounts`, request.url)
 
   if (error || !code || !workspaceId) {
+    console.log("[v0] ig-callback: saída antecipada — error:", error, "code:", !!code, "workspaceId:", workspaceId)
     accountsUrl.searchParams.set("ig_error", error || "missing_params")
     return NextResponse.redirect(accountsUrl)
   }
 
   const appSecret = process.env.INSTAGRAM_APP_KEY
   if (!appSecret) {
+    console.log("[v0] ig-callback: INSTAGRAM_APP_KEY não configurado")
     accountsUrl.searchParams.set("ig_error", "config_error")
     return NextResponse.redirect(accountsUrl)
   }
 
+  console.log("[v0] ig-callback: iniciando troca de token. workspaceId:", workspaceId, "code:", code?.slice(0, 20))
+
   try {
-    // Step 1: Trocar código por short-lived token — feito AQUI no servidor imediatamente
+    // Step 1: Trocar código por short-lived token
     const tokenBody = new URLSearchParams({
       client_id: CLIENT_ID,
       client_secret: appSecret,
@@ -50,8 +58,10 @@ export async function GET(request: NextRequest) {
       body: tokenBody.toString(),
     })
     const tokenData = await tokenRes.json()
+    console.log("[v0] ig-callback step1 status:", tokenRes.status, "data:", JSON.stringify(tokenData))
 
     if (!tokenRes.ok || tokenData.error_type) {
+      console.log("[v0] ig-callback step1 ERRO:", tokenData.error_message)
       accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error_message || "auth_error"))
       return NextResponse.redirect(accountsUrl)
     }
@@ -59,11 +69,12 @@ export async function GET(request: NextRequest) {
     const shortToken: string = tokenData.access_token
     const igUserId: string = String(tokenData.user_id)
 
-    // Step 2: Trocar por long-lived token (60 dias)
+    // Step 2: Long-lived token (60 dias)
     const llRes = await fetch(
       `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
     )
     const llData = await llRes.json()
+    console.log("[v0] ig-callback step2 long-lived:", llRes.status, "error:", llData.error)
     const longToken: string = llData.access_token || shortToken
 
     // Step 3: Buscar perfil
@@ -71,8 +82,10 @@ export async function GET(request: NextRequest) {
       `${GRAPH_IG}/v22.0/${igUserId}?fields=id,name,username,profile_picture_url,followers_count&access_token=${longToken}`
     )
     const profile = await profileRes.json()
+    console.log("[v0] ig-callback step3 profile:", JSON.stringify(profile))
 
     // Step 4: Salvar no banco
+    console.log("[v0] ig-callback step4: salvando no banco. DATABASE_URL set:", !!process.env.DATABASE_URL)
     const sql = neon(process.env.DATABASE_URL!)
     await sql`
       INSERT INTO social_accounts (
@@ -96,12 +109,15 @@ export async function GET(request: NextRequest) {
         last_sync_at        = NOW(),
         updated_at          = NOW()
     `
+    console.log("[v0] ig-callback step4: salvo com sucesso. igUserId:", igUserId)
 
     const successUrl = new URL(`/workspace/${workspaceId}/accounts/connecting-instagram`, request.url)
     successUrl.searchParams.set("success", "1")
     successUrl.searchParams.set("username", profile.username || igUserId)
+    console.log("[v0] ig-callback: redirecionando para:", successUrl.toString())
     return NextResponse.redirect(successUrl)
   } catch (err: any) {
+    console.log("[v0] ig-callback CATCH:", err.message, err.stack)
     const errorUrl = new URL(`/workspace/${workspaceId}/accounts/connecting-instagram`, request.url)
     errorUrl.searchParams.set("error", encodeURIComponent(err.message || "unexpected_error"))
     return NextResponse.redirect(errorUrl)
