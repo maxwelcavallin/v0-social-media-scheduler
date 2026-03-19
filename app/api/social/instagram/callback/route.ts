@@ -4,7 +4,6 @@ import { neon } from "@neondatabase/serverless"
 const IG_API = "https://api.instagram.com"
 const GRAPH_FB = "https://graph.facebook.com"
 const GRAPH_IG = "https://graph.instagram.com"
-const CLIENT_ID = "2170374997100265"
 const REDIRECT_URI = "https://social.list.dog/api/social/instagram/callback"
 
 export async function GET(request: NextRequest) {
@@ -34,19 +33,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(accountsUrl)
   }
 
+  const appId = process.env.INSTAGRAM_APP_ID
   const appSecret = process.env.INSTAGRAM_APP_KEY
-  if (!appSecret) {
-    console.log("[v0] ig-callback: INSTAGRAM_APP_KEY não configurado")
+  if (!appId || !appSecret) {
+    console.log("[v0] ig-callback: INSTAGRAM_APP_ID ou INSTAGRAM_APP_KEY não configurado. appId:", !!appId, "appSecret:", !!appSecret)
     accountsUrl.searchParams.set("ig_error", "config_error")
     return NextResponse.redirect(accountsUrl)
   }
 
-  console.log("[v0] ig-callback: iniciando troca de token. workspaceId:", workspaceId, "code:", code?.slice(0, 20))
+  console.log("[v0] ig-callback: iniciando troca de token. workspaceId:", workspaceId, "code:", code?.slice(0, 20), "appId:", appId)
 
   try {
     // Step 1: Trocar código por short-lived token
     const tokenBody = new URLSearchParams({
-      client_id: CLIENT_ID,
+      client_id: appId,
       client_secret: appSecret,
       grant_type: "authorization_code",
       redirect_uri: REDIRECT_URI,

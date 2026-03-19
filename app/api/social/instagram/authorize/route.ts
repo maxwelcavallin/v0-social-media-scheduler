@@ -13,7 +13,11 @@ export async function GET(request: NextRequest) {
 
   // redirect_uri fixo — deve ser idêntico ao cadastrado no painel Meta do app INSTAGRAM_APP_ID
   const REDIRECT_URI = "https://social.list.dog/api/social/instagram/callback"
-  const CLIENT_ID = "2170374997100265"
+  const CLIENT_ID = process.env.INSTAGRAM_APP_ID!
+
+  if (!CLIENT_ID) {
+    return NextResponse.json({ error: "INSTAGRAM_APP_ID não configurado" }, { status: 500 })
+  }
 
   const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri: REDIRECT_URI })).toString("base64")
 
