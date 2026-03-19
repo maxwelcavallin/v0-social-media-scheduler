@@ -33,10 +33,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(accountsUrl)
   }
 
+  // INSTAGRAM_APP_ID é um Facebook App ID — a troca de token usa graph.facebook.com
+  // com FACEBOOK_APP_SECRET. O authorize usa www.instagram.com/oauth/authorize
+  // que é o fluxo Instagram Login via Facebook App.
   const appId = process.env.INSTAGRAM_APP_ID
-  const appSecret = process.env.INSTAGRAM_APP_KEY
+  const appSecret = process.env.FACEBOOK_APP_SECRET
   if (!appId || !appSecret) {
-    console.log("[v0] ig-callback: INSTAGRAM_APP_ID ou INSTAGRAM_APP_KEY não configurado. appId:", !!appId, "appSecret:", !!appSecret)
+    console.log("[v0] ig-callback: INSTAGRAM_APP_ID ou FACEBOOK_APP_SECRET não configurado. appId:", !!appId, "appSecret:", !!appSecret)
     accountsUrl.searchParams.set("ig_error", "config_error")
     return NextResponse.redirect(accountsUrl)
   }
@@ -44,7 +47,7 @@ export async function GET(request: NextRequest) {
   console.log("[v0] ig-callback: iniciando troca de token. workspaceId:", workspaceId, "code:", code?.slice(0, 20), "appId:", appId)
 
   try {
-    // Step 1: Trocar código por short-lived token
+    // Step 1: Trocar código por token via graph.facebook.com (Instagram Login via Facebook App)
     const tokenBody = new URLSearchParams({
       client_id: appId,
       client_secret: appSecret,
@@ -55,46 +58,33 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] ig-callback step1 body enviado:", tokenBody.toString().replace(appSecret, "***"))
 
-    // Tentar primeiro com api.instagram.com (Instagram Login puro)
-    // Se falhar, tentar com graph.facebook.com (Facebook App com Instagram Login)
-    let tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
+    const tokenRes = await fetch(`${GRAPH_FB}/v22.0/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: tokenBody.toString(),
     })
-    let tokenData = await tokenRes.json()
-    console.log("[v0] ig-callback step1 via api.instagram.com status:", tokenRes.status, "data:", JSON.stringify(tokenData))
+    const tokenData = await tokenRes.json()
+    console.log("[v0] ig-callback step1 status:", tokenRes.status, "data:", JSON.stringify(tokenData))
 
-    if (!tokenRes.ok || tokenData.error_type) {
-      console.log("[v0] ig-callback step1 fallback: tentando graph.facebook.com")
-      tokenRes = await fetch(`${GRAPH_FB}/v22.0/oauth/access_token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: tokenBody.toString(),
-      })
-      tokenData = await tokenRes.json()
-      console.log("[v0] ig-callback step1 via graph.facebook.com status:", tokenRes.status, "data:", JSON.stringify(tokenData))
-    }
-
-    if (!tokenRes.ok || tokenData.error_type || tokenData.error) {
-      console.log("[v0] ig-callback step1 ERRO final:", tokenData.error_message || tokenData.error?.message)
-      accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error_message || tokenData.error?.message || "auth_error"))
+    if (!tokenRes.ok || tokenData.error) {
+      console.log("[v0] ig-callback step1 ERRO:", tokenData.error?.message)
+      accountsUrl.searchParams.set("ig_error", encodeURIComponent(tokenData.error?.message || "auth_error"))
       return NextResponse.redirect(accountsUrl)
     }
 
     const shortToken: string = tokenData.access_token
-    // graph.facebook.com retorna user_id como string; api.instagram.com como number
     const igUserId: string = String(tokenData.user_id || tokenData.id || "")
 
-    // Step 2: Long-lived token (60 dias)
+    // Step 2: Long-lived token via graph.instagram.com (usa INSTAGRAM_APP_KEY)
+    const igSecret = process.env.INSTAGRAM_APP_KEY || appSecret
     const llRes = await fetch(
-      `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
+      `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${igSecret}&access_token=${shortToken}`
     )
     const llData = await llRes.json()
-    console.log("[v0] ig-callback step2 long-lived:", llRes.status, "error:", llData.error)
+    console.log("[v0] ig-callback step2 long-lived:", llRes.status, "error:", JSON.stringify(llData.error))
     const longToken: string = llData.access_token || shortToken
 
-    // Step 3: Buscar perfil
+    // Step 3: Buscar perfil via graph.instagram.com
     const profileRes = await fetch(
       `${GRAPH_IG}/v22.0/${igUserId}?fields=id,name,username,profile_picture_url,followers_count&access_token=${longToken}`
     )
