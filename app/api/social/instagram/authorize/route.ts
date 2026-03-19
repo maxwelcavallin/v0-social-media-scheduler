@@ -31,8 +31,10 @@ export async function GET(request: NextRequest) {
     state,
   })
 
-  // Endpoint correto para Instagram Business Login API
+  // www.instagram.com/oauth/authorize → autorização (Instagram Login atual)
+  // api.instagram.com/oauth/access_token → troca de token (no callback)
+  // Esses dois endpoints formam o par correto — não misturar com o Basic Display API (depreciado)
   return NextResponse.redirect(
-    `https://api.instagram.com/oauth/authorize?${params.toString()}`
+    `https://www.instagram.com/oauth/authorize?${params.toString()}`
   )
 }
