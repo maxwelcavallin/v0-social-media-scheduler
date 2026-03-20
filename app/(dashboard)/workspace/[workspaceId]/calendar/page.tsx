@@ -15,7 +15,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const [workspace, accounts, posts] = await Promise.all([
+  const [workspace, workspaces, accounts, posts] = await Promise.all([
     sql`
       SELECT o.id, o.name
       FROM "organization" o
@@ -24,9 +24,17 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
       LIMIT 1
     `,
     sql`
+      SELECT o.id, o.name
+      FROM "organization" o
+      JOIN "member" m ON o.id = m.organization_id
+      WHERE m.user_id = ${session.user.id}
+      ORDER BY o.name ASC
+    `,
+    sql`
       SELECT id, platform, account_name, account_username, profile_picture_url
       FROM social_accounts
       WHERE workspace_id = ${workspaceId} AND is_active = true
+      ORDER BY account_name ASC
     `,
     sql`
       SELECT
@@ -83,7 +91,12 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
         </CreatePostDialog>
       </div>
 
-      <CalendarView posts={posts} accounts={accounts} workspaceId={workspaceId} />
+      <CalendarView
+        posts={posts}
+        accounts={accounts}
+        workspaceId={workspaceId}
+        workspaces={workspaces}
+      />
     </div>
   )
 }

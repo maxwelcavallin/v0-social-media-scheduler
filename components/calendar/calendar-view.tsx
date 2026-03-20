@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import {
   format,
   startOfMonth,
@@ -27,12 +28,29 @@ import {
   XCircle,
   FileText,
   CalendarClock,
+  Search,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+
+const formatTimeBrasilia = (iso: string): string =>
+  new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso))
 
 const parseBrasilia = (iso: string): Date => {
   const utc = new Date(iso)
@@ -42,15 +60,7 @@ const parseBrasilia = (iso: string): Date => {
   return new Date(utc.getTime() - diff)
 }
 
-const formatTimeBrasilia = (iso: string): string =>
-  new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso))
-
-// Paleta de cores para usernames — atribuída por índice estável
-const USERNAME_COLORS = [
+const ACCOUNT_COLORS = [
   "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
   "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
   "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
@@ -61,30 +71,26 @@ const USERNAME_COLORS = [
   "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
 ]
 
-const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; badge: string; dot: string }> = {
+const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; badge: string }> = {
   scheduled: {
     label: "Agendado",
     icon: <CalendarClock className="w-3.5 h-3.5" />,
     badge: "bg-primary/10 text-primary border-primary/20",
-    dot: "bg-primary",
   },
   published: {
     label: "Publicado",
     icon: <CheckCircle2 className="w-3.5 h-3.5" />,
     badge: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400",
-    dot: "bg-emerald-500",
   },
   failed: {
     label: "Falhou",
     icon: <XCircle className="w-3.5 h-3.5" />,
     badge: "bg-destructive/10 text-destructive border-destructive/20",
-    dot: "bg-destructive",
   },
   draft: {
     label: "Rascunho",
     icon: <FileText className="w-3.5 h-3.5" />,
     badge: "bg-muted text-muted-foreground border-border",
-    dot: "bg-muted-foreground",
   },
 }
 
@@ -103,6 +109,11 @@ interface Account {
   profile_picture_url?: string
 }
 
+interface Workspace {
+  id: string
+  name: string
+}
+
 interface Post {
   id: string
   content: string
@@ -114,20 +125,25 @@ interface Post {
   cover_url?: string
   media?: { url: string; media_type: string }[]
   accounts?: Account[]
-  workspace_name?: string
 }
 
 interface Props {
   posts: Post[]
   accounts?: Account[]
   workspaceId?: string
+  workspaces?: Workspace[]
   showWorkspace?: boolean
 }
 
-export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace }: Props) {
+export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [], showWorkspace }: Props) {
+  const router = useRouter()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  // Filtros
+  const [search, setSearch] = useState("")
+  const [filterAccountId, setFilterAccountId] = useState<string>("all")
+  const [filterWorkspaceId, setFilterWorkspaceId] = useState<string>(workspaceId || "all")
 
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
@@ -136,26 +152,47 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
   const days = eachDayOfInterval({ start: calStart, end: calEnd })
   const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 
-  // Mapa de cor estável por account id — usa todos os accounts disponíveis (prop + embedded)
-  const accountColorMap = new Map<string, number>()
-  const allAccounts = [
-    ...accounts,
-    ...posts.flatMap((p) => p.accounts || []),
-  ]
-  const seenIds = new Set<string>()
-  allAccounts.forEach((a) => {
-    if (!seenIds.has(a.id)) {
-      accountColorMap.set(a.id, accountColorMap.size % USERNAME_COLORS.length)
-      seenIds.add(a.id)
-    }
-  })
+  // Mapa de cor estável por account id
+  const accountColorMap = useMemo(() => {
+    const map = new Map<string, number>()
+    const seen = new Set<string>()
+    ;[...accounts, ...posts.flatMap((p) => p.accounts || [])].forEach((a) => {
+      if (!seen.has(a.id)) {
+        map.set(a.id, map.size % ACCOUNT_COLORS.length)
+        seen.add(a.id)
+      }
+    })
+    return map
+  }, [accounts, posts])
+
+  // Posts filtrados
+  const filteredPosts = useMemo(() => {
+    return posts.filter((post) => {
+      // Filtro de conta
+      if (filterAccountId !== "all") {
+        const hasAccount = (post.accounts || []).some((a) => a.id === filterAccountId)
+        if (!hasAccount) return false
+      }
+      // Filtro de busca (legenda ou nome de conta)
+      if (search.trim()) {
+        const q = search.toLowerCase()
+        const inContent = post.content?.toLowerCase().includes(q)
+        const inAccount = (post.accounts || []).some(
+          (a) =>
+            a.account_name?.toLowerCase().includes(q) ||
+            a.account_username?.toLowerCase().includes(q)
+        )
+        if (!inContent && !inAccount) return false
+      }
+      return true
+    })
+  }, [posts, filterAccountId, search])
 
   const getPostsForDay = (day: Date) =>
-    posts.filter((p) => p.scheduled_at && isSameDay(parseBrasilia(p.scheduled_at), day))
+    filteredPosts.filter((p) => p.scheduled_at && isSameDay(parseBrasilia(p.scheduled_at), day))
 
   const selectedDayPosts = selectedDay ? getPostsForDay(selectedDay) : []
 
-  // Contas vinculadas ao post vêm embutidas no objeto post.accounts
   const getAccountsForPost = (post: Post): Account[] => post.accounts || []
 
   const handleDayClick = (day: Date) => {
@@ -165,10 +202,96 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
     }
   }
 
+  const handleWorkspaceChange = (id: string) => {
+    setFilterWorkspaceId(id)
+    if (id !== "all" && id !== workspaceId) {
+      router.push(`/workspace/${id}/calendar`)
+    }
+  }
+
+  const hasFilters = search !== "" || filterAccountId !== "all"
+
   return (
     <>
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Busca */}
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Buscar por legenda ou conta..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 h-9 text-sm"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Filtro de workspace */}
+        {workspaces.length > 1 && (
+          <Select value={filterWorkspaceId} onValueChange={handleWorkspaceChange}>
+            <SelectTrigger className="h-9 text-sm w-[180px]">
+              <SelectValue placeholder="Workspace" />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaces.map((ws) => (
+                <SelectItem key={ws.id} value={ws.id}>
+                  {ws.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Filtro de conta */}
+        {accounts.length > 0 && (
+          <Select value={filterAccountId} onValueChange={setFilterAccountId}>
+            <SelectTrigger className="h-9 text-sm w-[200px]">
+              <SelectValue placeholder="Todas as contas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as contas</SelectItem>
+              {accounts.map((acc) => (
+                <SelectItem key={acc.id} value={acc.id}>
+                  <div className="flex items-center gap-2">
+                    {acc.platform === "instagram" ? (
+                      <Instagram className="w-3.5 h-3.5 text-pink-500 shrink-0" />
+                    ) : (
+                      <Facebook className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    )}
+                    <span>
+                      {acc.account_username ? `@${acc.account_username}` : acc.account_name}
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 text-xs gap-1.5 text-muted-foreground"
+            onClick={() => { setSearch(""); setFilterAccountId("all") }}
+          >
+            <X className="w-3.5 h-3.5" />
+            Limpar filtros
+          </Button>
+        )}
+      </div>
+
+      {/* Calendário */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        {/* Header */}
+        {/* Header mês */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="text-base font-semibold text-foreground capitalize">
             {format(currentDate, "MMMM yyyy", { locale: ptBR })}
@@ -186,7 +309,7 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
           </div>
         </div>
 
-        {/* Week days */}
+        {/* Dias da semana */}
         <div className="grid grid-cols-7 border-b border-border">
           {weekDays.map((day) => (
             <div key={day} className="py-2 text-center text-xs font-medium text-muted-foreground">
@@ -195,7 +318,7 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
           ))}
         </div>
 
-        {/* Days grid */}
+        {/* Grid de dias */}
         <div className="grid grid-cols-7">
           {days.map((day, idx) => {
             const dayPosts = getPostsForDay(day)
@@ -217,9 +340,11 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
                 <div className="flex items-center justify-between mb-1">
                   <span className={cn(
                     "text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full",
-                    isTodayDay ? "bg-primary text-primary-foreground"
-                    : isCurrentMonth ? "text-foreground"
-                    : "text-muted-foreground/40"
+                    isTodayDay
+                      ? "bg-primary text-primary-foreground"
+                      : isCurrentMonth
+                      ? "text-foreground"
+                      : "text-muted-foreground/40"
                   )}>
                     {format(day, "d")}
                   </span>
@@ -231,20 +356,17 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
                 <div className="flex flex-col gap-0.5">
                   {dayPosts.slice(0, 3).map((post) => {
                     const status = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
-                    // Pegar o primeiro username disponível para mostrar no card
                     const postAccounts = getAccountsForPost(post)
                     const firstAccount = postAccounts[0]
-                    const colorIdx = firstAccount
-                      ? (accountColorMap.get(firstAccount.id) ?? 0)
-                      : 0
-                    const username = firstAccount?.account_username || firstAccount?.account_name
+                    const colorIdx = firstAccount ? (accountColorMap.get(firstAccount.id) ?? 0) : 0
+                    // Mostrar nome da conta: preferir account_name, fallback account_username
+                    const displayName = firstAccount?.account_name || firstAccount?.account_username || "Post"
 
                     return (
                       <div
                         key={post.id}
                         className={cn(
-                          "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs",
-                          "border",
+                          "flex items-center gap-1 px-1.5 py-0.5 rounded text-xs border",
                           post.status === "scheduled" && "bg-primary/8 border-primary/15",
                           post.status === "published" && "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800",
                           post.status === "failed" && "bg-destructive/8 border-destructive/15",
@@ -252,20 +374,22 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
                         )}
                       >
                         {/* Ícone de status */}
-                        <span className={cn("shrink-0", status.dot === "bg-primary" ? "text-primary" : status.dot === "bg-emerald-500" ? "text-emerald-500" : status.dot === "bg-destructive" ? "text-destructive" : "text-muted-foreground")}>
+                        <span className={cn(
+                          "shrink-0",
+                          post.status === "scheduled" && "text-primary",
+                          post.status === "published" && "text-emerald-500",
+                          post.status === "failed" && "text-destructive",
+                          post.status === "draft" && "text-muted-foreground",
+                        )}>
                           {status.icon}
                         </span>
-                        {/* Username colorido */}
-                        {username ? (
-                          <span className={cn(
-                            "truncate text-[10px] font-medium px-1 rounded",
-                            USERNAME_COLORS[colorIdx]
-                          )}>
-                            @{username}
-                          </span>
-                        ) : (
-                          <span className="truncate text-muted-foreground text-[10px]">Post</span>
-                        )}
+                        {/* Nome da conta com cor distinta */}
+                        <span className={cn(
+                          "truncate text-[10px] font-semibold px-1 rounded leading-tight",
+                          ACCOUNT_COLORS[colorIdx]
+                        )}>
+                          {displayName}
+                        </span>
                       </div>
                     )
                   })}
@@ -279,7 +403,7 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
         </div>
       </div>
 
-      {/* Detail Sheet */}
+      {/* Sheet de detalhe */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col">
           <SheetHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
@@ -293,7 +417,7 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
               {selectedDayPosts.map((post) => {
                 const status = STATUS_CONFIG[post.status] || STATUS_CONFIG.draft
                 const postAccounts = getAccountsForPost(post)
-                const postType = post.post_type || (post.post_types || [])[0] || "feed"
+                const postType = post.post_type || "feed"
                 const mediaItems = post.media || []
                 const hasVideo = mediaItems.some((m) => m.media_type === "video") || postType === "reel"
 
@@ -303,15 +427,10 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
                     {post.thumbnail && (
                       <div className="relative w-full h-48 bg-black">
                         {hasVideo ? (
-                          <video
-                            src={post.thumbnail}
-                            className="w-full h-full object-cover"
-                            muted
-                          />
+                          <video src={post.thumbnail} className="w-full h-full object-cover" muted />
                         ) : (
                           <img src={post.thumbnail} alt="" className="w-full h-full object-cover" />
                         )}
-                        {/* Tipo de post + mídia count overlay */}
                         <div className="absolute bottom-2 left-2 flex gap-1.5">
                           <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm font-medium">
                             {POST_TYPE_LABELS[postType] || postType}
@@ -332,7 +451,7 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
                     )}
 
                     <div className="p-4 flex flex-col gap-3">
-                      {/* Status */}
+                      {/* Status + horário */}
                       <div className="flex items-center justify-between">
                         <span className={cn(
                           "inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border",
@@ -351,37 +470,45 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
 
                       {/* Contas vinculadas */}
                       {postAccounts.length > 0 && (
-                        <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-col gap-2">
                           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contas</span>
-                          <div className="flex flex-wrap gap-1.5">
+                          <div className="flex flex-col gap-2">
                             {postAccounts.map((acc) => {
                               const colorIdx = accountColorMap.get(acc.id) ?? 0
                               return (
-                                <div key={acc.id} className="flex items-center gap-1.5">
+                                <div key={acc.id} className="flex items-center gap-2.5">
                                   {acc.profile_picture_url ? (
                                     <img
                                       src={acc.profile_picture_url}
                                       alt={acc.account_name}
-                                      className="w-5 h-5 rounded-full object-cover"
+                                      className="w-8 h-8 rounded-full object-cover shrink-0"
                                     />
                                   ) : (
-                                    <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
+                                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                                       {acc.platform === "instagram"
-                                        ? <Instagram className="w-3 h-3 text-muted-foreground" />
-                                        : <Facebook className="w-3 h-3 text-muted-foreground" />
+                                        ? <Instagram className="w-4 h-4 text-muted-foreground" />
+                                        : <Facebook className="w-4 h-4 text-muted-foreground" />
                                       }
                                     </div>
                                   )}
-                                  <div className="flex flex-col leading-none">
-                                    <span className="text-xs font-medium text-foreground">{acc.account_name}</span>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="text-sm font-semibold text-foreground truncate">
+                                      {acc.account_name}
+                                    </span>
                                     {acc.account_username && (
                                       <span className={cn(
-                                        "text-[11px] font-medium px-1 rounded mt-0.5 w-fit",
-                                        USERNAME_COLORS[colorIdx]
+                                        "text-[11px] font-medium px-1.5 py-0.5 rounded mt-0.5 w-fit",
+                                        ACCOUNT_COLORS[colorIdx]
                                       )}>
                                         @{acc.account_username}
                                       </span>
                                     )}
+                                  </div>
+                                  <div className="ml-auto shrink-0">
+                                    {acc.platform === "instagram"
+                                      ? <Instagram className="w-4 h-4 text-pink-500" />
+                                      : <Facebook className="w-4 h-4 text-blue-600" />
+                                    }
                                   </div>
                                 </div>
                               )
@@ -393,23 +520,19 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
                       {/* Formato */}
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Formato</span>
-                        <span className="text-xs font-medium text-foreground">
+                        <Badge variant="outline" className="text-xs font-medium">
                           {POST_TYPE_LABELS[postType] || postType}
-                        </span>
+                        </Badge>
                       </div>
 
                       {/* Legenda */}
                       {post.content && (
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Legenda</span>
-                          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line line-clamp-5">
+                          <p className="text-sm text-foreground leading-relaxed whitespace-pre-line line-clamp-6">
                             {post.content}
                           </p>
                         </div>
-                      )}
-
-                      {showWorkspace && post.workspace_name && (
-                        <Badge variant="outline" className="text-xs w-fit">{post.workspace_name}</Badge>
                       )}
                     </div>
                   </div>
