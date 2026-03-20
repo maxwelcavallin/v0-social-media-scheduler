@@ -32,7 +32,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
     `,
     sql`
       SELECT
-        p.id, p.content, p.status, p.scheduled_at, p.created_at, p.post_type, p.cover_url,
+        p.id, p.content, p.status, p.scheduled_at, p.created_at,
         COALESCE(
           (
             SELECT JSON_AGG(

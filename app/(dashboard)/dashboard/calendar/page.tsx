@@ -25,7 +25,7 @@ export default async function DashboardCalendarPage() {
     `,
     sql`
       SELECT
-        p.id, p.content, p.status, p.scheduled_at, p.created_at, p.post_type, p.cover_url,
+        p.id, p.content, p.status, p.scheduled_at, p.created_at,
         o.id as workspace_id, o.name as workspace_name,
         COALESCE(
           (
