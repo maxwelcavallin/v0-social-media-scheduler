@@ -5,7 +5,7 @@ export type Plan = "free" | "pro"
 export const PLAN_LIMITS = {
   free: {
     workspaces: 1,
-    socialAccounts: 2,
+    socialAccounts: 4,
     postsPerMonth: 30,
   },
   pro: {
