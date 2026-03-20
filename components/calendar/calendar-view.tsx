@@ -182,20 +182,14 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
         const hasAccount = (post.accounts || []).some((a) => a.id === filterAccountId)
         if (!hasAccount) return false
       }
-      // Filtro de busca (legenda ou nome de conta)
-      if (search.trim()) {
-        const q = search.toLowerCase()
-        const inContent = post.content?.toLowerCase().includes(q)
-        const inAccount = (post.accounts || []).some(
-          (a) =>
-            a.account_name?.toLowerCase().includes(q) ||
-            a.account_username?.toLowerCase().includes(q)
-        )
-        if (!inContent && !inAccount) return false
+      // Filtro de tipo de post
+      if (filterPostType !== "all") {
+        const postTypes: string[] = Array.isArray((post as any).post_types) ? (post as any).post_types : []
+        if (!postTypes.includes(filterPostType)) return false
       }
       return true
     })
-  }, [posts, filterAccountId, search])
+  }, [posts, filterAccountId, filterPostType])
 
   const getPostsForDay = (day: Date) =>
     filteredPosts.filter((p) => p.scheduled_at && isSameDay(parseBrasilia(p.scheduled_at), day))
@@ -233,7 +227,7 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
     ? null
     : accounts.find((a) => a.id === filterAccountId)
 
-  const hasFilters = filterAccountId !== "all"
+  const hasFilters = filterAccountId !== "all" || filterPostType !== "all"
 
   return (
     <>
@@ -339,12 +333,59 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
             </PopoverContent>
           </Popover>
 
+          {/* Combobox Tipo de Post — só no calendário geral */}
+          {showFilters && (
+            <Popover open={postTypeOpen} onOpenChange={setPostTypeOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={postTypeOpen}
+                  className="h-9 w-[170px] justify-between text-sm font-normal"
+                >
+                  <span className="truncate">
+                    {filterPostType === "all" ? "Tipo de post" :
+                      filterPostType === "feed" ? "Feed" :
+                      filterPostType === "reel" ? "Reel" :
+                      filterPostType === "story" ? "Story" :
+                      "Carrossel"}
+                  </span>
+                  <ChevronsUpDown className="ml-2 w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[180px] p-0">
+                <Command>
+                  <CommandList>
+                    <CommandGroup>
+                      {[
+                        { value: "all", label: "Todos os tipos" },
+                        { value: "feed", label: "Feed" },
+                        { value: "reel", label: "Reel" },
+                        { value: "story", label: "Story" },
+                        { value: "carousel", label: "Carrossel" },
+                      ].map((opt) => (
+                        <CommandItem
+                          key={opt.value}
+                          value={opt.value}
+                          onSelect={() => { setFilterPostType(opt.value); setPostTypeOpen(false) }}
+                        >
+                          <Check className={cn("mr-2 w-4 h-4", filterPostType === opt.value ? "opacity-100" : "opacity-0")} />
+                          {opt.label}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          )}
+
           {hasFilters && (
             <Button
               variant="ghost"
               size="sm"
               className="h-9 text-xs gap-1.5 text-muted-foreground"
-              onClick={() => { setFilterAccountId("all") }}
+              onClick={() => { setFilterAccountId("all"); setFilterPostType("all") }}
             >
               <X className="w-3.5 h-3.5" />
               Limpar

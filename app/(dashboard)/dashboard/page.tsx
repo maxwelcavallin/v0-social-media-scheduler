@@ -3,11 +3,11 @@ import sql from "@/lib/db"
 import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Building2, Plus, ImageIcon, CheckCircle2, Clock } from "lucide-react"
 import Link from "next/link"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
 import { EmptyState } from "@/components/dashboard/empty-state"
+import { RecentPostsFilter } from "@/components/dashboard/recent-posts-filter"
 
 export default async function DashboardPage() {
   const session = await getSession()
@@ -59,13 +59,6 @@ export default async function DashboardPage() {
   ])
 
   const statsData = stats[0] || { scheduled: 0, published: 0, connected_accounts: 0 }
-
-  const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-    draft: { label: "Rascunho", variant: "outline" },
-    scheduled: { label: "Agendado", variant: "secondary" },
-    published: { label: "Publicado", variant: "default" },
-    failed: { label: "Falhou", variant: "destructive" },
-  }
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
@@ -195,46 +188,7 @@ export default async function DashboardPage() {
 
       {/* Recent Posts */}
       {recentPosts.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Posts Recentes</h2>
-            <Link href="/dashboard/posts">
-              <Button variant="ghost" size="sm">Ver todos</Button>
-            </Link>
-          </div>
-          <Card>
-            <CardContent className="p-0">
-              <div className="divide-y divide-border">
-                {recentPosts.map((post: any) => {
-                  const status = statusMap[post.status] || { label: post.status, variant: "outline" as const }
-                  return (
-                    <div key={post.id} className="flex items-center justify-between px-4 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground truncate max-w-xs">
-                          {(post.post_types || []).includes("story") ? "Story" : (post.content || "Sem legenda")}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {post.workspace_name}
-                          {(() => {
-                            const accs = Array.isArray(post.accounts) ? post.accounts : []
-                            const names = accs.map((a: any) => a.username ? `@${a.username}` : a.name).filter(Boolean)
-                            return names.length > 0 ? ` · ${names.join(", ")}` : null
-                          })()}
-                          {post.scheduled_at && (
-                            <> · {new Date(post.scheduled_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</>
-                          )}
-                        </p>
-                      </div>
-                      <Badge variant={status.variant} className="ml-3 shrink-0 text-xs">
-                        {status.label}
-                      </Badge>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <RecentPostsFilter posts={recentPosts as any} />
       )}
     </div>
   )
