@@ -89,6 +89,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
         posts={posts}
         accounts={accounts}
         workspaceId={workspaceId}
+        showAccountFilter
       />
     </div>
   )

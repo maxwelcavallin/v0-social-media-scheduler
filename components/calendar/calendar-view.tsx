@@ -139,9 +139,10 @@ interface Props {
   workspaces?: Workspace[]
   showWorkspace?: boolean
   showFilters?: boolean
+  showAccountFilter?: boolean
 }
 
-export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [], showWorkspace, showFilters }: Props) {
+export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [], showWorkspace, showFilters, showAccountFilter }: Props) {
   const router = useRouter()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -234,37 +235,100 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
 
   return (
     <>
-      {/* Filtros — só no calendário geral */}
-      {showFilters && <div className="flex flex-wrap items-center gap-3">
+      {/* Combobox de conta — aparece no calendário geral (showFilters) e no de workspace (showAccountFilter) */}
+      {(showFilters || showAccountFilter) && accounts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
 
-        {/* Combobox Workspace */}
-        {workspaces.length > 1 && (
-          <Popover open={wsOpen} onOpenChange={setWsOpen}>
+          {/* Combobox Workspace — só no calendário geral */}
+          {showFilters && workspaces.length > 1 && (
+            <Popover open={wsOpen} onOpenChange={setWsOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={wsOpen}
+                  className="h-9 w-[200px] justify-between text-sm font-normal"
+                >
+                  <span className="truncate">{selectedWorkspaceName || "Workspace"}</span>
+                  <ChevronsUpDown className="ml-2 w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[220px] p-0">
+                <Command>
+                  <CommandInput placeholder="Buscar workspace..." />
+                  <CommandList>
+                    <CommandEmpty>Nenhum workspace encontrado.</CommandEmpty>
+                    <CommandGroup>
+                      {workspaces.map((ws) => (
+                        <CommandItem
+                          key={ws.id}
+                          value={ws.name}
+                          onSelect={() => { handleWorkspaceChange(ws.id); setWsOpen(false) }}
+                        >
+                          <Check className={cn("mr-2 w-4 h-4", ws.id === filterWorkspaceId ? "opacity-100" : "opacity-0")} />
+                          {ws.name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {/* Combobox Conta */}
+          <Popover open={accOpen} onOpenChange={setAccOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 role="combobox"
-                aria-expanded={wsOpen}
-                className="h-9 w-[200px] justify-between text-sm font-normal"
+                aria-expanded={accOpen}
+                className="h-9 w-[210px] justify-between text-sm font-normal"
               >
-                <span className="truncate">{selectedWorkspaceName || "Workspace"}</span>
+                {selectedAccountLabel ? (
+                  <span className="flex items-center gap-2 truncate">
+                    {selectedAccountLabel.platform === "instagram"
+                      ? <Instagram className="w-3.5 h-3.5 text-pink-500 shrink-0" />
+                      : <Facebook className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    }
+                    <span className="truncate">
+                      {selectedAccountLabel.account_username
+                        ? `@${selectedAccountLabel.account_username}`
+                        : selectedAccountLabel.account_name}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Todas as contas</span>
+                )}
                 <ChevronsUpDown className="ml-2 w-3.5 h-3.5 shrink-0 text-muted-foreground" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[220px] p-0">
+            <PopoverContent className="w-[230px] p-0">
               <Command>
-                <CommandInput placeholder="Buscar workspace..." />
+                <CommandInput placeholder="Buscar conta..." />
                 <CommandList>
-                  <CommandEmpty>Nenhum workspace encontrado.</CommandEmpty>
+                  <CommandEmpty>Nenhuma conta encontrada.</CommandEmpty>
                   <CommandGroup>
-                    {workspaces.map((ws) => (
+                    <CommandItem value="all" onSelect={() => { setFilterAccountId("all"); setAccOpen(false) }}>
+                      <Check className={cn("mr-2 w-4 h-4", filterAccountId === "all" ? "opacity-100" : "opacity-0")} />
+                      Todas as contas
+                    </CommandItem>
+                    {accounts.map((acc) => (
                       <CommandItem
-                        key={ws.id}
-                        value={ws.name}
-                        onSelect={() => { handleWorkspaceChange(ws.id); setWsOpen(false) }}
+                        key={acc.id}
+                        value={`${acc.account_name} ${acc.account_username || ""}`}
+                        onSelect={() => { setFilterAccountId(acc.id); setAccOpen(false) }}
                       >
-                        <Check className={cn("mr-2 w-4 h-4", ws.id === filterWorkspaceId ? "opacity-100" : "opacity-0")} />
-                        {ws.name}
+                        <Check className={cn("mr-2 w-4 h-4", acc.id === filterAccountId ? "opacity-100" : "opacity-0")} />
+                        <span className="flex items-center gap-2">
+                          {acc.platform === "instagram"
+                            ? <Instagram className="w-3.5 h-3.5 text-pink-500 shrink-0" />
+                            : <Facebook className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          }
+                          <span className="truncate">
+                            {acc.account_username ? `@${acc.account_username}` : acc.account_name}
+                          </span>
+                        </span>
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -272,81 +336,20 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
               </Command>
             </PopoverContent>
           </Popover>
-        )}
 
-        {/* Combobox Conta */}
-        <Popover open={accOpen} onOpenChange={setAccOpen}>
-          <PopoverTrigger asChild>
+          {hasFilters && (
             <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={accOpen}
-              className="h-9 w-[210px] justify-between text-sm font-normal"
+              variant="ghost"
+              size="sm"
+              className="h-9 text-xs gap-1.5 text-muted-foreground"
+              onClick={() => { setFilterAccountId("all") }}
             >
-              {selectedAccountLabel ? (
-                <span className="flex items-center gap-2 truncate">
-                  {selectedAccountLabel.platform === "instagram"
-                    ? <Instagram className="w-3.5 h-3.5 text-pink-500 shrink-0" />
-                    : <Facebook className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  }
-                  <span className="truncate">
-                    {selectedAccountLabel.account_username
-                      ? `@${selectedAccountLabel.account_username}`
-                      : selectedAccountLabel.account_name}
-                  </span>
-                </span>
-              ) : (
-                <span className="text-muted-foreground">Todas as contas</span>
-              )}
-              <ChevronsUpDown className="ml-2 w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              <X className="w-3.5 h-3.5" />
+              Limpar
             </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[230px] p-0">
-            <Command>
-              <CommandInput placeholder="Buscar conta..." />
-              <CommandList>
-                <CommandEmpty>Nenhuma conta encontrada.</CommandEmpty>
-                <CommandGroup>
-                  <CommandItem value="all" onSelect={() => { setFilterAccountId("all"); setAccOpen(false) }}>
-                    <Check className={cn("mr-2 w-4 h-4", filterAccountId === "all" ? "opacity-100" : "opacity-0")} />
-                    Todas as contas
-                  </CommandItem>
-                  {accounts.map((acc) => (
-                    <CommandItem
-                      key={acc.id}
-                      value={`${acc.account_name} ${acc.account_username || ""}`}
-                      onSelect={() => { setFilterAccountId(acc.id); setAccOpen(false) }}
-                    >
-                      <Check className={cn("mr-2 w-4 h-4", acc.id === filterAccountId ? "opacity-100" : "opacity-0")} />
-                      <span className="flex items-center gap-2">
-                        {acc.platform === "instagram"
-                          ? <Instagram className="w-3.5 h-3.5 text-pink-500 shrink-0" />
-                          : <Facebook className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                        }
-                        <span className="truncate">
-                          {acc.account_username ? `@${acc.account_username}` : acc.account_name}
-                        </span>
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 text-xs gap-1.5 text-muted-foreground"
-            onClick={() => { setFilterAccountId("all") }}
-          >
-            <X className="w-3.5 h-3.5" />
-            Limpar
-          </Button>
-        )}
-      </div>}
+          )}
+        </div>
+      )}
 
       {/* Calendário */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
