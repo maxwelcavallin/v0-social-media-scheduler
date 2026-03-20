@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { DashboardHeader } from "@/components/dashboard/header"
 import sql from "@/lib/db"
+import { getUserPlan } from "@/lib/plans"
 
 export default async function DashboardLayout({
   children,
@@ -15,18 +16,20 @@ export default async function DashboardLayout({
     redirect("/login")
   }
 
-  // Fetch user's workspaces
-  const workspaces = await sql`
-    SELECT o.id, o.name, o.slug, o.logo
-    FROM "organization" o
-    JOIN "member" m ON o.id = m.organization_id
-    WHERE m.user_id = ${session.user.id}
-    ORDER BY o.created_at ASC
-  `
+  const [workspaces, plan] = await Promise.all([
+    sql`
+      SELECT o.id, o.name, o.slug, o.logo
+      FROM "organization" o
+      JOIN "member" m ON o.id = m.organization_id
+      WHERE m.user_id = ${session.user.id}
+      ORDER BY o.created_at ASC
+    `,
+    getUserPlan(session.user.id),
+  ])
 
   return (
     <div className="min-h-screen bg-background font-sans flex">
-      <DashboardSidebar workspaces={workspaces} user={session.user} />
+      <DashboardSidebar workspaces={workspaces} user={session.user} plan={plan} />
       <div className="flex-1 flex flex-col min-w-0">
         <DashboardHeader user={session.user} />
         <main className="flex-1 p-6 overflow-auto">

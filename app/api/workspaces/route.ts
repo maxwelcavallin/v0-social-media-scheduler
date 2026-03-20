@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
+import { checkWorkspaceLimit } from "@/lib/plans"
 
 export async function POST(request: NextRequest) {
   const session = await getSession()
@@ -12,6 +13,15 @@ export async function POST(request: NextRequest) {
 
   if (!name || !slug) {
     return NextResponse.json({ error: "Nome e slug são obrigatórios" }, { status: 400 })
+  }
+
+  // Verificar limite de workspaces do plano
+  const wsLimit = await checkWorkspaceLimit(session.user.id)
+  if (!wsLimit.allowed) {
+    return NextResponse.json(
+      { error: `Seu plano gratuito permite apenas ${wsLimit.limit} workspace. Faça upgrade para o plano Pro para criar workspaces ilimitados.`, upgrade: true },
+      { status: 403 }
+    )
   }
 
   // Check slug uniqueness

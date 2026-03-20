@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Building2,
   Link2,
+  Zap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -44,12 +45,14 @@ interface User {
 interface Props {
   workspaces: Workspace[]
   user: User
+  plan?: "free" | "pro"
 }
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/calendar", label: "Calendário", icon: CalendarDays },
   { href: "/dashboard/posts", label: "Posts", icon: ImageIcon },
+  { href: "/dashboard/plans", label: "Planos", icon: Zap },
 ]
 
 const workspaceNavItems = (workspaceId: string) => [
@@ -60,7 +63,7 @@ const workspaceNavItems = (workspaceId: string) => [
   { href: `/workspace/${workspaceId}/settings`, label: "Configurações", icon: Settings },
 ]
 
-export function DashboardSidebar({ workspaces, user }: Props) {
+export function DashboardSidebar({ workspaces, user, plan = "free" }: Props) {
   const pathname = usePathname()
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -188,6 +191,21 @@ export function DashboardSidebar({ workspaces, user }: Props) {
             </>
           )}
         </nav>
+
+        {/* Banner upgrade plano free */}
+        {plan === "free" && (
+          <div className="mx-3 mb-2 rounded-lg bg-primary/10 border border-primary/20 p-3 flex flex-col gap-2">
+            <p className="text-xs font-semibold text-primary">Plano Grátis</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">Faça upgrade para posts e contas ilimitados.</p>
+            <Link
+              href="/dashboard/plans"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            >
+              <Zap className="w-3 h-3" />
+              Ver planos
+            </Link>
+          </div>
+        )}
 
         {/* User */}
         <div className="px-3 py-3 border-t border-sidebar-border">

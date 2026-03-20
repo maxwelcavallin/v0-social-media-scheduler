@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
+import { checkPostsThisMonth } from "@/lib/plans"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
 
@@ -209,6 +210,17 @@ export async function POST(request: NextRequest) {
   // Drafts don't require accounts — all other types do
   if (!workspaceId || (!isDraft && (!accountIds || accountIds.length === 0))) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
+  }
+
+  // Verificar limite de posts do plano (rascunhos não contam)
+  if (!isDraft) {
+    const postLimit = await checkPostsThisMonth(session.user.id, workspaceId)
+    if (!postLimit.allowed) {
+      return NextResponse.json(
+        { error: `Você atingiu o limite de ${postLimit.limit} posts/mês do plano gratuito (${postLimit.current} usados). Faça upgrade para o Pro para posts ilimitados.`, upgrade: true },
+        { status: 403 }
+      )
+    }
   }
 
   const membership = await sql`

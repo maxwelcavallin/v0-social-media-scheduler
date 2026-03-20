@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
+import { checkSocialAccountLimit } from "@/lib/plans"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
 
@@ -49,6 +50,15 @@ export async function POST(request: NextRequest) {
 
   if (!code || !workspaceId) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
+  }
+
+  // Verificar limite de contas sociais do plano
+  const accountLimit = await checkSocialAccountLimit(session.user.id, workspaceId)
+  if (!accountLimit.allowed) {
+    return NextResponse.json(
+      { error: `Seu plano gratuito permite apenas ${accountLimit.limit} contas sociais. Faça upgrade para o Pro para contas ilimitadas.`, upgrade: true },
+      { status: 403 }
+    )
   }
 
   const host = request.headers.get("host") ?? ""
