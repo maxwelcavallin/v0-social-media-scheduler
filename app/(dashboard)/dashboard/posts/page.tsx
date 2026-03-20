@@ -35,7 +35,13 @@ export default async function DashboardPostsPage() {
       ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
       ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
       COUNT(DISTINCT pm.id)::int as media_count,
-      (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
+      (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail,
+      COALESCE(
+        (SELECT JSON_AGG(JSON_BUILD_OBJECT('name', sa2.account_name, 'username', sa2.account_username))
+         FROM post_targets pt2 JOIN social_accounts sa2 ON sa2.id = pt2.social_account_id
+         WHERE pt2.post_id = p.id),
+        '[]'::json
+      ) as accounts
     FROM posts p
     JOIN "organization" o ON o.id = p.workspace_id
     JOIN "member" m ON m.organization_id = o.id
@@ -100,8 +106,15 @@ export default async function DashboardPostsPage() {
 
                 <CardContent className="p-3">
                   <p className="text-xs text-primary font-medium mb-1 truncate">{post.workspace_name}</p>
+                  {(() => {
+                    const accs = Array.isArray(post.accounts) ? post.accounts : []
+                    const names = accs.map((a: any) => a.username ? `@${a.username}` : a.name).filter(Boolean)
+                    return names.length > 0 ? (
+                      <p className="text-xs text-muted-foreground font-medium mb-1 truncate">{names.join(", ")}</p>
+                    ) : null
+                  })()}
                   <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed">
-                    {post.content || "Sem legenda"}
+                    {postType === "story" ? "Story" : (post.content || "Sem legenda")}
                   </p>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">

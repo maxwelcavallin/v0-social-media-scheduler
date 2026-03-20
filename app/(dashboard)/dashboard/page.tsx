@@ -29,7 +29,13 @@ export default async function DashboardPage() {
     sql`
       SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
         o.name as workspace_name,
-        COUNT(DISTINCT pt.id)::int as platforms_count
+        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        COALESCE(
+          (SELECT JSON_AGG(JSON_BUILD_OBJECT('name', sa2.account_name, 'username', sa2.account_username))
+           FROM post_targets pt2 JOIN social_accounts sa2 ON sa2.id = pt2.social_account_id
+           WHERE pt2.post_id = p.id),
+          '[]'::json
+        ) as accounts
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
       JOIN "member" m ON o.id = m.organization_id
@@ -205,10 +211,15 @@ export default async function DashboardPage() {
                     <div key={post.id} className="flex items-center justify-between px-4 py-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-foreground truncate max-w-xs">
-                          {post.content || "Sem legenda"}
+                          {(post.post_types || []).includes("story") ? "Story" : (post.content || "Sem legenda")}
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {post.workspace_name}
+                          {(() => {
+                            const accs = Array.isArray(post.accounts) ? post.accounts : []
+                            const names = accs.map((a: any) => a.username ? `@${a.username}` : a.name).filter(Boolean)
+                            return names.length > 0 ? ` · ${names.join(", ")}` : null
+                          })()}
                           {post.scheduled_at && (
                             <> · {new Date(post.scheduled_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</>
                           )}

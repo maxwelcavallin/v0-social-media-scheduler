@@ -46,7 +46,13 @@ export default async function WorkspacePage({ params }: Props) {
       SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
-        COUNT(DISTINCT pm.id)::int as media_count
+        COUNT(DISTINCT pm.id)::int as media_count,
+        COALESCE(
+          (SELECT JSON_AGG(JSON_BUILD_OBJECT('name', sa2.account_name, 'username', sa2.account_username))
+           FROM post_targets pt2 JOIN social_accounts sa2 ON sa2.id = pt2.social_account_id
+           WHERE pt2.post_id = p.id),
+          '[]'::json
+        ) as accounts
       FROM posts p
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
@@ -236,9 +242,18 @@ export default async function WorkspacePage({ params }: Props) {
                 <Card key={post.id} className="hover:border-primary/30 transition-all">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm text-foreground line-clamp-2 flex-1">
-                        {post.content || "Sem legenda"}
-                      </p>
+                      <div className="flex-1 min-w-0">
+                        {(() => {
+                          const accs = Array.isArray(post.accounts) ? post.accounts : []
+                          const names = accs.map((a: any) => a.username ? `@${a.username}` : a.name).filter(Boolean)
+                          return names.length > 0 ? (
+                            <p className="text-xs text-muted-foreground font-medium mb-1 truncate">{names.join(", ")}</p>
+                          ) : null
+                        })()}
+                        <p className="text-sm text-foreground line-clamp-2">
+                          {(post.post_types || []).includes("story") ? "Story" : (post.content || "Sem legenda")}
+                        </p>
+                      </div>
                       <Badge variant={status.variant} className="text-xs shrink-0">
                         {status.label}
                       </Badge>

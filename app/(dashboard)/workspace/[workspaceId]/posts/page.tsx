@@ -162,8 +162,16 @@ export default async function WorkspacePostsPage({ params }: Props) {
                 </div>
 
                 <CardContent className="p-3">
+                  {(() => {
+                    const ids: string[] = post.account_ids || []
+                    const matched = accounts.filter((a: any) => ids.includes(a.id))
+                    const names = matched.map((a: any) => a.account_username ? `@${a.account_username}` : a.account_name).filter(Boolean)
+                    return names.length > 0 ? (
+                      <p className="text-xs text-muted-foreground font-medium mb-1 truncate">{names.join(", ")}</p>
+                    ) : null
+                  })()}
                   <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed">
-                    {post.content || "Sem legenda"}
+                    {postType === "story" ? "Story" : (post.content || "Sem legenda")}
                   </p>
                   {post.status === "failed" && post.error_message && (
                     <p className="text-xs text-destructive bg-destructive/5 rounded px-2 py-1 mb-2 line-clamp-2 leading-relaxed">
