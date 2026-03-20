@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { MoreHorizontal, Pencil, Trash2, CalendarX, Loader2 } from "lucide-react"
+import { MoreHorizontal, Pencil, Trash2, CalendarX, Loader2, Copy } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
 
@@ -73,6 +73,17 @@ export function PostActions({ post, workspaceId, accounts, className }: Props) {
   const isScheduled = post.status === "scheduled"
   const isPublished = post.status === "published"
   const isDraft = post.status === "draft"
+  const [duplicating, setDuplicating] = useState(false)
+
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const res = await fetch(`/api/posts/${post.id}/duplicate`, { method: "POST" })
+      if (res.ok) router.refresh()
+    } finally {
+      setDuplicating(false)
+    }
+  }
 
 
 
@@ -123,8 +134,6 @@ export function PostActions({ post, workspaceId, accounts, className }: Props) {
     router.refresh()
   }
 
-  if (isPublished && !isDraft) return null
-
   return (
     <>
       <DropdownMenu>
@@ -139,9 +148,18 @@ export function PostActions({ post, workspaceId, accounts, className }: Props) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={() => setEditOpen(true)}>
-            <Pencil className="w-4 h-4 mr-2" />
-            {isDraft ? "Editar / Publicar rascunho" : "Editar"}
+          {!isPublished && (
+            <DropdownMenuItem onClick={() => setEditOpen(true)}>
+              <Pencil className="w-4 h-4 mr-2" />
+              {isDraft ? "Editar / Publicar rascunho" : "Editar"}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={handleDuplicate} disabled={duplicating}>
+            {duplicating
+              ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              : <Copy className="w-4 h-4 mr-2" />
+            }
+            Duplicar como rascunho
           </DropdownMenuItem>
           {isScheduled && (
             <DropdownMenuItem onClick={() => setCancelOpen(true)}>
