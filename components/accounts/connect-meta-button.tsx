@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Facebook, Plus } from "lucide-react"
+import { Facebook } from "lucide-react"
 
 interface Props {
   workspaceId: string
@@ -9,8 +9,32 @@ interface Props {
 
 export function ConnectMetaButton({ workspaceId }: Props) {
   const handleConnect = () => {
-    // Redirect to server-side authorize route — FACEBOOK_APP_ID stays on the server
-    window.location.href = `/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`
+    const url = `/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`
+
+    // Dimensões generosas para o Facebook exibir todas as empresas sem scroll truncado
+    const width = 720
+    const height = 760
+    const left = Math.max(0, (window.screen.width - width) / 2)
+    const top = Math.max(0, (window.screen.height - height) / 2)
+
+    const popup = window.open(
+      url,
+      "facebook_oauth",
+      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes,resizable=yes`
+    )
+
+    // Monitora o fechamento do popup e recarrega a página para refletir a conta conectada
+    if (popup) {
+      const timer = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(timer)
+          window.location.reload()
+        }
+      }, 500)
+    } else {
+      // Fallback: se o popup for bloqueado, redireciona na mesma aba
+      window.location.href = url
+    }
   }
 
   return (
