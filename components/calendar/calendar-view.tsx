@@ -108,17 +108,13 @@ interface Post {
   content: string
   status: string
   scheduled_at: string
-  platforms?: string[]
-  post_types?: string[]
   post_type?: string
   media_count?: number
   thumbnail?: string
   cover_url?: string
   media?: { url: string; media_type: string }[]
-  account_ids?: string[]
-  account_usernames?: string[]
+  accounts?: Account[]
   workspace_name?: string
-  workspace_id?: string
 }
 
 interface Props {
@@ -140,22 +136,27 @@ export function CalendarView({ posts, accounts = [], workspaceId, showWorkspace 
   const days = eachDayOfInterval({ start: calStart, end: calEnd })
   const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
 
-  // Mapear account_id → username e índice de cor estável
+  // Mapa de cor estável por account id — usa todos os accounts disponíveis (prop + embedded)
   const accountColorMap = new Map<string, number>()
-  accounts.forEach((a, i) => accountColorMap.set(a.id, i % USERNAME_COLORS.length))
+  const allAccounts = [
+    ...accounts,
+    ...posts.flatMap((p) => p.accounts || []),
+  ]
+  const seenIds = new Set<string>()
+  allAccounts.forEach((a) => {
+    if (!seenIds.has(a.id)) {
+      accountColorMap.set(a.id, accountColorMap.size % USERNAME_COLORS.length)
+      seenIds.add(a.id)
+    }
+  })
 
   const getPostsForDay = (day: Date) =>
     posts.filter((p) => p.scheduled_at && isSameDay(parseBrasilia(p.scheduled_at), day))
 
   const selectedDayPosts = selectedDay ? getPostsForDay(selectedDay) : []
 
-  // Para cada post, pegar os usernames das contas vinculadas
-  const getAccountsForPost = (post: Post): Account[] => {
-    if (!post.account_ids || post.account_ids.length === 0) return []
-    return post.account_ids
-      .map((id) => accounts.find((a) => a.id === id))
-      .filter(Boolean) as Account[]
-  }
+  // Contas vinculadas ao post vêm embutidas no objeto post.accounts
+  const getAccountsForPost = (post: Post): Account[] => post.accounts || []
 
   const handleDayClick = (day: Date) => {
     if (getPostsForDay(day).length > 0) {

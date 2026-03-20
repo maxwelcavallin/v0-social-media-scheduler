@@ -29,24 +29,37 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
       WHERE workspace_id = ${workspaceId} AND is_active = true
     `,
     sql`
-      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at, p.post_type, p.cover_url,
-        ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
-        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
-        ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) as account_ids,
-        COUNT(DISTINCT pm.id)::int as media_count,
+      SELECT
+        p.id, p.content, p.status, p.scheduled_at, p.created_at, p.post_type, p.cover_url,
+        COALESCE(
+          (
+            SELECT JSON_AGG(
+              JSON_BUILD_OBJECT(
+                'id', sa2.id,
+                'platform', sa2.platform,
+                'account_name', sa2.account_name,
+                'account_username', sa2.account_username,
+                'profile_picture_url', sa2.profile_picture_url
+              )
+            )
+            FROM post_targets pt2
+            JOIN social_accounts sa2 ON sa2.id = pt2.social_account_id
+            WHERE pt2.post_id = p.id
+          ),
+          '[]'::json
+        ) as accounts,
+        (SELECT COUNT(*)::int FROM post_media pm WHERE pm.post_id = p.id) as media_count,
         (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail,
         COALESCE(
-          JSON_AGG(JSON_BUILD_OBJECT('url', pm.url, 'media_type', pm.media_type) ORDER BY pm.order_index ASC)
-            FILTER (WHERE pm.id IS NOT NULL),
+          (
+            SELECT JSON_AGG(JSON_BUILD_OBJECT('url', pm3.url, 'media_type', pm3.media_type) ORDER BY pm3.order_index ASC)
+            FROM post_media pm3 WHERE pm3.post_id = p.id
+          ),
           '[]'::json
         ) as media
       FROM posts p
-      LEFT JOIN post_targets pt ON pt.post_id = p.id
-      LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
-      LEFT JOIN post_media pm ON pm.post_id = p.id
       WHERE p.workspace_id = ${workspaceId}
         AND p.scheduled_at IS NOT NULL
-      GROUP BY p.id
       ORDER BY p.scheduled_at ASC
     `,
   ])
