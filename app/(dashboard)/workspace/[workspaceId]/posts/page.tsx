@@ -51,15 +51,21 @@ export default async function WorkspacePostsPage({ params }: Props) {
     `,
     sql`
       SELECT p.id, p.content, p.status, p.scheduled_at, p.published_at, p.created_at, p.error_message,
+        p.post_type, p.cover_url,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) as account_ids,
         COUNT(DISTINCT pm.id) FILTER (WHERE pm.media_type != 'cover')::int as media_count,
         COALESCE(
           (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id AND pm2.media_type = 'cover' LIMIT 1),
           (SELECT pm3.url FROM post_media pm3 WHERE pm3.post_id = p.id AND pm3.media_type != 'cover' ORDER BY pm3.order_index ASC LIMIT 1)
         ) as thumbnail,
         (SELECT pm4.media_type FROM post_media pm4 WHERE pm4.post_id = p.id AND pm4.media_type != 'cover' ORDER BY pm4.order_index ASC LIMIT 1) as primary_media_type,
-        (SELECT pm5.url FROM post_media pm5 WHERE pm5.post_id = p.id AND pm5.media_type != 'cover' ORDER BY pm5.order_index ASC LIMIT 1) as primary_media_url
+        (SELECT pm5.url FROM post_media pm5 WHERE pm5.post_id = p.id AND pm5.media_type != 'cover' ORDER BY pm5.order_index ASC LIMIT 1) as primary_media_url,
+        COALESCE(
+          JSON_AGG(JSON_BUILD_OBJECT('url', pm.url, 'media_type', pm.media_type) ORDER BY pm.order_index ASC) FILTER (WHERE pm.id IS NOT NULL AND pm.media_type != 'cover'),
+          '[]'::json
+        ) as media
       FROM posts p
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
@@ -190,12 +196,17 @@ export default async function WorkspacePostsPage({ params }: Props) {
                         {status.label}
                       </Badge>
                       <PostActions
+                        workspaceId={workspaceId}
+                        accounts={accounts}
                         post={{
                           id: post.id,
                           content: post.content,
                           status: post.status,
                           scheduled_at: post.scheduled_at,
-                          post_type: (post.post_types || [])[0] || "feed",
+                          post_type: post.post_type || (post.post_types || [])[0] || "feed",
+                          accountIds: post.account_ids || [],
+                          media: post.media || [],
+                          cover_url: post.cover_url,
                         }}
                       />
                     </div>

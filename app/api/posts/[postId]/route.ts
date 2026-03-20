@@ -40,7 +40,7 @@ export async function PATCH(
 
   const { postId } = await params
   const body = await request.json()
-  const { content, scheduledAt, accountIds, postType } = body
+  const { content, scheduledAt, accountIds, postType, media, coverMedia, scheduleType } = body
 
   const owned = await sql`
     SELECT p.id, p.status FROM posts p
@@ -61,13 +61,44 @@ export async function PATCH(
     finalScheduledAt = hasTz ? new Date(scheduledAt).toISOString() : new Date(`${scheduledAt}-03:00`).toISOString()
   }
 
+  // Determinar novo status baseado no scheduleType
+  const newStatus = scheduleType === "draft"
+    ? "draft"
+    : scheduleType === "scheduled" && finalScheduledAt
+    ? "scheduled"
+    : owned[0].status // manter status atual se não especificado
+
   await sql`
     UPDATE posts
     SET content = ${content || ""},
         scheduled_at = ${finalScheduledAt},
+        post_type = ${postType || "feed"},
+        status = ${newStatus},
         updated_at = NOW()
     WHERE id = ${postId}
   `
+
+  // Atualizar mídia se fornecida
+  if (media !== undefined) {
+    await sql`DELETE FROM post_media WHERE post_id = ${postId}`
+    if (media && media.length > 0) {
+      for (let i = 0; i < media.length; i++) {
+        const m = media[i]
+        await sql`
+          INSERT INTO post_media (post_id, url, media_type, position, created_at)
+          VALUES (${postId}, ${m.url}, ${m.type || "image"}, ${i}, NOW())
+        `
+      }
+    }
+    // Capa do reel
+    if (coverMedia?.url) {
+      await sql`
+        UPDATE posts SET cover_url = ${coverMedia.url}, updated_at = NOW() WHERE id = ${postId}
+      `
+    } else if (media !== undefined) {
+      await sql`UPDATE posts SET cover_url = NULL, updated_at = NOW() WHERE id = ${postId}`
+    }
+  }
 
   // Update targets if accountIds provided
   if (accountIds && accountIds.length > 0) {
