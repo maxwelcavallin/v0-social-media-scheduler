@@ -51,7 +51,6 @@ export default async function WorkspacePostsPage({ params }: Props) {
     `,
     sql`
       SELECT p.id, p.content, p.status, p.scheduled_at, p.published_at, p.created_at, p.error_message,
-        p.post_type, p.cover_url,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
         ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) as account_ids,
@@ -203,10 +202,9 @@ export default async function WorkspacePostsPage({ params }: Props) {
                           content: post.content,
                           status: post.status,
                           scheduled_at: post.scheduled_at,
-                          post_type: post.post_type || (post.post_types || [])[0] || "feed",
+                          post_type: (post.post_types || [])[0] || "feed",
                           accountIds: post.account_ids || [],
                           media: post.media || [],
-                          cover_url: post.cover_url,
                         }}
                       />
                     </div>
