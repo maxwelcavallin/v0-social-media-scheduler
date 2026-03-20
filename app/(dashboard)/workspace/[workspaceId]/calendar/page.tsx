@@ -29,11 +29,17 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
       WHERE workspace_id = ${workspaceId} AND is_active = true
     `,
     sql`
-      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
+      SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at, p.post_type, p.cover_url,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+        ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) as account_ids,
         COUNT(DISTINCT pm.id)::int as media_count,
-        (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail
+        (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail,
+        COALESCE(
+          JSON_AGG(JSON_BUILD_OBJECT('url', pm.url, 'media_type', pm.media_type) ORDER BY pm.order_index ASC)
+            FILTER (WHERE pm.id IS NOT NULL),
+          '[]'::json
+        ) as media
       FROM posts p
       LEFT JOIN post_targets pt ON pt.post_id = p.id
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
@@ -64,7 +70,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
         </CreatePostDialog>
       </div>
 
-      <CalendarView posts={posts} />
+      <CalendarView posts={posts} accounts={accounts} workspaceId={workspaceId} />
     </div>
   )
 }

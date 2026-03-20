@@ -501,7 +501,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
     <Dialog open={isOpen} onOpenChange={handleClose}>
       {!isEditMode && children && <DialogTrigger asChild>{children}</DialogTrigger>}
 
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-2xl max-h-[90dvh] flex flex-col p-0 overflow-hidden [&>button]:z-10">
         {publishingSuccess ? (
           <div className="flex flex-col items-center justify-center gap-6 py-16 px-8 text-center">
             <div className="flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30">
@@ -527,9 +527,9 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
               </DialogTitle>
             </DialogHeader>
 
-            <ScrollArea className="flex-1 min-h-0">
+            <ScrollArea className="flex-1 min-h-0 overflow-x-hidden">
               <form onSubmit={handleSubmit(onSubmit)} id="post-form">
-                <div className="px-6 py-4 flex flex-col gap-5">
+                <div className="px-6 py-4 flex flex-col gap-5 w-full min-w-0">
 
                   {error && (
                     <Alert variant="destructive">
