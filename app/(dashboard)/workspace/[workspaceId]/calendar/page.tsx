@@ -15,7 +15,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const [workspace, workspaces, accounts, posts] = await Promise.all([
+  const [workspace, accounts, posts] = await Promise.all([
     sql`
       SELECT o.id, o.name
       FROM "organization" o
@@ -23,13 +23,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
       WHERE o.id = ${workspaceId} AND m.user_id = ${session.user.id}
       LIMIT 1
     `,
-    sql`
-      SELECT o.id, o.name
-      FROM "organization" o
-      JOIN "member" m ON o.id = m.organization_id
-      WHERE m.user_id = ${session.user.id}
-      ORDER BY o.name ASC
-    `,
+
     sql`
       SELECT id, platform, account_name, account_username, profile_picture_url
       FROM social_accounts
@@ -95,7 +89,6 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
         posts={posts}
         accounts={accounts}
         workspaceId={workspaceId}
-        workspaces={workspaces}
       />
     </div>
   )

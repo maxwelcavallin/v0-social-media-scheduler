@@ -28,12 +28,10 @@ import {
   XCircle,
   FileText,
   CalendarClock,
-  Search,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -140,9 +138,10 @@ interface Props {
   workspaceId?: string
   workspaces?: Workspace[]
   showWorkspace?: boolean
+  showFilters?: boolean
 }
 
-export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [], showWorkspace }: Props) {
+export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [], showWorkspace, showFilters }: Props) {
   const router = useRouter()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -231,31 +230,12 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
     ? null
     : accounts.find((a) => a.id === filterAccountId)
 
-  const hasFilters = search !== "" || filterAccountId !== "all"
+  const hasFilters = filterAccountId !== "all"
 
   return (
     <>
-      {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-3">
-
-        {/* Busca */}
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="Buscar legenda ou conta..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 h-9 text-sm"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+      {/* Filtros — só no calendário geral */}
+      {showFilters && <div className="flex flex-wrap items-center gap-3">
 
         {/* Combobox Workspace */}
         {workspaces.length > 1 && (
@@ -360,13 +340,13 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
             variant="ghost"
             size="sm"
             className="h-9 text-xs gap-1.5 text-muted-foreground"
-            onClick={() => { setSearch(""); setFilterAccountId("all") }}
+            onClick={() => { setFilterAccountId("all") }}
           >
             <X className="w-3.5 h-3.5" />
             Limpar
           </Button>
         )}
-      </div>
+      </div>}
 
       {/* Calendário */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -530,8 +510,8 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
                     )}
 
                     <div className="p-4 flex flex-col gap-3">
-                      {/* Status + horário */}
-                      <div className="flex items-center justify-between">
+                      {/* Status + data/hora completa */}
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <span className={cn(
                           "inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border",
                           status.badge
@@ -542,7 +522,15 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
                         {post.scheduled_at && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="w-3 h-3" />
-                            {formatTimeBrasilia(post.scheduled_at)}
+                            {new Intl.DateTimeFormat("pt-BR", {
+                              timeZone: "America/Sao_Paulo",
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }).format(new Date(post.scheduled_at))}
+                            {" "}(Brasília)
                           </span>
                         )}
                       </div>
