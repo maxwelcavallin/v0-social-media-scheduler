@@ -44,7 +44,8 @@ const schema = z.object({
   postType: z.enum(["feed", "reel", "carousel", "story"]),
   scheduleType: z.enum(["now", "scheduled"]),
   scheduledAt: z.string().optional(),
-  accountIds: z.array(z.string()).min(1, "Selecione ao menos uma conta"),
+  // Contas podem estar vazias em rascunhos — validação feita no onSubmit
+  accountIds: z.array(z.string()),
 })
 
 type FormData = z.infer<typeof schema>
@@ -329,6 +330,11 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
       setError("Aguarde o upload da mídia terminar antes de publicar.")
       return
     }
+    // Publicar/agendar exige ao menos uma conta
+    if ((!data.accountIds || data.accountIds.length === 0)) {
+      setError("Selecione ao menos uma conta para publicar ou agendar.")
+      return
+    }
     setSubmitting(true)
     setError(null)
 
@@ -341,7 +347,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
       coverMedia: uploadedCover || undefined,
     }
 
-    // Modo edição: PATCH no post existente
+    // Modo edição: PATCH para salvar conteúdo/mídia/contas, depois /publish para agendar ou publicar
     if (isEditMode && editPost) {
       try {
         const validDates = scheduledDates.filter((d) => d.trim() !== "")
@@ -349,7 +355,8 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
           ? `${validDates[0]}-03:00`
           : null
 
-        const res = await fetch(`/api/posts/${editPost.id}`, {
+        // 1. Salva todas as propriedades via PATCH (mantém como draft temporariamente)
+        const patchRes = await fetch(`/api/posts/${editPost.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -358,16 +365,41 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
             accountIds: data.accountIds,
             media: uploadedMedia,
             coverMedia: uploadedCover || undefined,
-            scheduleType: data.scheduleType,
-            scheduledAt,
+            scheduleType: "draft", // salva como draft primeiro
+            scheduledAt: null,
           }),
         })
-        const json = await res.json()
-        if (!res.ok) {
-          setError(json.error || "Erro ao salvar alterações")
+        const patchJson = await patchRes.json()
+        if (!patchRes.ok) {
+          setError(patchJson.error || "Erro ao salvar alterações")
           return
         }
-        onEditClose?.()
+
+        // 2. Agora publica ou agenda via /publish
+        const publishRes = await fetch(`/api/posts/${editPost.id}/publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scheduleType: data.scheduleType,
+            scheduledAt,
+            accountIds: data.accountIds,
+          }),
+        })
+        const publishJson = await publishRes.json()
+        if (!publishRes.ok) {
+          setError(publishJson.error || "Erro ao publicar/agendar")
+          return
+        }
+
+        if (data.scheduleType === "now") {
+          setPublishingSuccess(true)
+          setTimeout(() => {
+            setPublishingSuccess(false)
+            onEditClose?.()
+          }, 3000)
+        } else {
+          onEditClose?.()
+        }
         router.refresh()
       } catch (err: any) {
         setError(err.message || "Erro inesperado.")
@@ -849,6 +881,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
             </ScrollArea>
 
             <div className="flex justify-between gap-3 px-6 py-4 border-t border-border bg-muted/30 shrink-0">
+              {/* Salvar rascunho — sempre disponível */}
               <Button
                 type="button"
                 variant="ghost"
@@ -856,12 +889,8 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
                 disabled={isUploading || savingDraft || submitting || (uploadedMedia.length === 0 && !watch("content"))}
                 className="gap-2 text-muted-foreground hover:text-foreground"
               >
-                {savingDraft ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <BookmarkIcon className="w-4 h-4" />
-                )}
-                {isEditMode ? "Salvar como rascunho" : "Salvar rascunho"}
+                {savingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookmarkIcon className="w-4 h-4" />}
+                Salvar rascunho
               </Button>
 
               <div className="flex gap-2">
@@ -876,7 +905,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
                 <Button
                   type="submit"
                   form="post-form"
-                  disabled={!canSubmit || savingDraft}
+                  disabled={isUploading || submitting || savingDraft}
                   className="gap-2 min-w-32"
                 >
                   {isUploading ? (
@@ -887,22 +916,17 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
                   ) : submitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      {isEditMode ? "Salvando..." : "Agendando..."}
-                    </>
-                  ) : isEditMode ? (
-                    <>
-                      <Pencil className="w-4 h-4" />
-                      Salvar alterações
+                      {scheduleType === "now" ? "Publicando..." : "Agendando..."}
                     </>
                   ) : scheduleType === "now" ? (
                     <>
                       <Send className="w-4 h-4" />
-                      Publicar
+                      Publicar agora
                     </>
                   ) : (
                     <>
                       <CalendarDays className="w-4 h-4" />
-                      {scheduledDates.filter(d => d).length > 1
+                      {!isEditMode && scheduledDates.filter(d => d).length > 1
                         ? `Agendar ${scheduledDates.filter(d => d).length}x`
                         : "Agendar"}
                     </>
