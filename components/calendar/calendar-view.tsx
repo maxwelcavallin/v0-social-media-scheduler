@@ -151,6 +151,8 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
   const [search, setSearch] = useState("")
   const [filterAccountId, setFilterAccountId] = useState<string>("all")
   const [filterWorkspaceId, setFilterWorkspaceId] = useState<string>(workspaceId || "all")
+  const [filterPostType, setFilterPostType] = useState<string>("all")
+  const [postTypeOpen, setPostTypeOpen] = useState(false)
 
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
