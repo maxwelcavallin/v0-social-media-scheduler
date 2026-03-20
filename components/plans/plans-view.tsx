@@ -18,6 +18,7 @@ interface Props {
     socialAccounts: UsageStat
     postsThisMonth: UsageStat
   }
+  hasCompanyDocument?: boolean
 }
 
 function UsageBar({ current, limit }: UsageStat) {
@@ -41,8 +42,9 @@ function UsageBar({ current, limit }: UsageStat) {
   )
 }
 
-export function PlansView({ currentPlan, usage }: Props) {
+export function PlansView({ currentPlan, usage, hasCompanyDocument = false }: Props) {
   const isFree = currentPlan === "free"
+  const canUpgrade = isFree && hasCompanyDocument
 
   const freePlanFeatures = [
     { icon: Building2, label: "1 workspace" },
@@ -149,7 +151,14 @@ export function PlansView({ currentPlan, usage }: Props) {
               </li>
             ))}
           </ul>
-          <Button className="mt-auto gap-2" disabled={!isFree}>
+          {isFree && !hasCompanyDocument && (
+            <p className="text-xs text-amber-600 -mb-1">
+              Cadastre os dados da empresa em{" "}
+              <a href="/dashboard/settings" className="underline font-medium">Configurações</a>{" "}
+              para fazer upgrade.
+            </p>
+          )}
+          <Button className="mt-auto gap-2" disabled={!canUpgrade}>
             <Zap className="w-4 h-4" />
             {isFree ? "Começar agora" : "Plano atual"}
           </Button>

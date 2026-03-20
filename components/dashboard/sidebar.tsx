@@ -42,10 +42,18 @@ interface User {
   image?: string | null
 }
 
+interface Company {
+  id: string
+  name: string
+  document: string | null
+  role: string
+}
+
 interface Props {
   workspaces: Workspace[]
   user: User
   plan?: "free" | "pro"
+  company?: Company | null
 }
 
 const navItems = [
@@ -53,6 +61,7 @@ const navItems = [
   { href: "/dashboard/calendar", label: "Calendário", icon: CalendarDays },
   { href: "/dashboard/posts", label: "Posts", icon: ImageIcon },
   { href: "/dashboard/plans", label: "Planos", icon: Zap },
+  { href: "/dashboard/settings", label: "Configurações", icon: Settings },
 ]
 
 const workspaceNavItems = (workspaceId: string) => [
@@ -63,7 +72,7 @@ const workspaceNavItems = (workspaceId: string) => [
   { href: `/workspace/${workspaceId}/settings`, label: "Configurações", icon: Settings },
 ]
 
-export function DashboardSidebar({ workspaces, user, plan = "free" }: Props) {
+export function DashboardSidebar({ workspaces, user, plan = "free", company }: Props) {
   const pathname = usePathname()
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -92,6 +101,27 @@ export function DashboardSidebar({ workspaces, user, plan = "free" }: Props) {
             <span className="font-bold text-base text-sidebar-foreground">SocialDog</span>
           </Link>
         </div>
+
+        {/* Empresa */}
+        {company ? (
+          <Link
+            href="/dashboard/settings"
+            className="flex items-center gap-2 px-4 py-2 border-b border-sidebar-border hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <div className="w-5 h-5 rounded bg-primary/20 flex items-center justify-center shrink-0">
+              <Building2 className="w-3 h-3 text-primary" />
+            </div>
+            <span className="text-xs font-medium text-sidebar-foreground/70 truncate">{company.name}</span>
+          </Link>
+        ) : (
+          <Link
+            href="/dashboard/settings"
+            className="flex items-center gap-2 px-4 py-2 border-b border-sidebar-border text-xs text-amber-600 hover:bg-sidebar-accent/50 transition-colors"
+          >
+            <Building2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Cadastrar empresa</span>
+          </Link>
+        )}
 
         {/* Workspace switcher */}
         <div className="px-3 py-3 border-b border-sidebar-border">
