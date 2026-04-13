@@ -14,6 +14,7 @@ import {
   Building2,
   Link2,
   Zap,
+  Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -54,6 +55,7 @@ interface Props {
   user: User
   plan?: "free" | "pro"
   company?: Company | null
+  isSuperAdmin?: boolean
 }
 
 const navItems = [
@@ -72,7 +74,7 @@ const workspaceNavItems = (workspaceId: string) => [
   { href: `/workspace/${workspaceId}/settings`, label: "Configurações", icon: Settings },
 ]
 
-export function DashboardSidebar({ workspaces, user, plan = "free", company }: Props) {
+export function DashboardSidebar({ workspaces, user, plan = "free", company, isSuperAdmin }: Props) {
   const pathname = usePathname()
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -235,6 +237,17 @@ export function DashboardSidebar({ workspaces, user, plan = "free", company }: P
               Ver planos
             </Link>
           </div>
+        )}
+
+        {/* Super Admin link */}
+        {isSuperAdmin && (
+          <Link
+            href="/admin/users"
+            className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-300/30 text-xs font-medium text-amber-600 hover:bg-amber-500/20 transition-colors"
+          >
+            <Shield className="w-3.5 h-3.5 shrink-0" />
+            Painel Admin
+          </Link>
         )}
 
         {/* User */}

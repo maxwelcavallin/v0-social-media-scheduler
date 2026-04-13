@@ -11,6 +11,7 @@ export type SessionUser = {
   name: string
   email: string
   plan: string
+  isSuperAdmin?: boolean
 }
 
 export async function createSessionToken(user: SessionUser): Promise<string> {

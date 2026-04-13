@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const [user] = await sql`
-      SELECT id, name, email, password, plan FROM users WHERE email = ${email} LIMIT 1
+      SELECT id, name, email, password, plan, is_super_admin FROM users WHERE email = ${email} LIMIT 1
     `
     if (!user) {
       return NextResponse.json({ error: "E-mail ou senha incorretos." }, { status: 401 })
@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "E-mail ou senha incorretos." }, { status: 401 })
     }
 
-    const token = await createSessionToken({ id: user.id, name: user.name, email: user.email, plan: user.plan })
+    const token = await createSessionToken({ id: user.id, name: user.name, email: user.email, plan: user.plan, isSuperAdmin: user.is_super_admin ?? false })
 
-    const response = NextResponse.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, plan: user.plan } })
+    const response = NextResponse.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, plan: user.plan, isSuperAdmin: user.is_super_admin ?? false } })
     // secure: true works for both production and v0.dev preview (both use HTTPS)
     // Only disable secure on explicit localhost (non-HTTPS dev)
     const host = request.headers.get("host") || ""
