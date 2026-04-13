@@ -2,6 +2,7 @@ import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { AdminUsersView } from "@/components/admin/admin-users-view"
 
+export const dynamic = "force-dynamic"
 export const metadata = { title: "Usuários | Admin — SocialDog" }
 
 export default async function AdminUsersPage() {

@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
+
+export const dynamic = "force-dynamic"
 import Link from "next/link"
 import Image from "next/image"
 import { Shield } from "lucide-react"
