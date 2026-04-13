@@ -26,7 +26,11 @@ export async function GET(req: NextRequest) {
       u.created_at,
       u.is_super_admin,
       COALESCE(us.plan, 'free') as plan,
+      us.updated_at as plan_updated_at,
+      (SELECT c.id FROM company c JOIN company_member cm ON cm.company_id = c.id WHERE cm.user_id = u.id LIMIT 1) as company_id,
       (SELECT c.name FROM company c JOIN company_member cm ON cm.company_id = c.id WHERE cm.user_id = u.id LIMIT 1) as company_name,
+      (SELECT c.document FROM company c JOIN company_member cm ON cm.company_id = c.id WHERE cm.user_id = u.id LIMIT 1) as company_document,
+      (SELECT cm.role FROM company_member cm WHERE cm.user_id = u.id LIMIT 1) as company_role,
       (SELECT COUNT(*)::int FROM "organization" o JOIN "member" m ON m.organization_id = o.id WHERE m.user_id = u.id) as workspace_count
     FROM users u
     LEFT JOIN user_subscriptions us ON us.user_id = u.id
@@ -41,7 +45,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ users })
 }
 
-// PATCH /api/admin/users — atualiza plano de um usuário
+// PATCH /api/admin/users — atualiza plano ou senha de um usuário
 export async function PATCH(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
@@ -49,12 +53,26 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Acesso negado" }, { status: 403 })
   }
 
-  const { userId, plan } = await req.json()
-  if (!userId || !["free", "pro"].includes(plan)) {
-    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
+  const body = await req.json()
+  const { userId, plan, newPassword } = body
+
+  if (!userId) return NextResponse.json({ error: "userId obrigatório" }, { status: 400 })
+
+  // Alterar senha
+  if (newPassword) {
+    if (newPassword.length < 6) {
+      return NextResponse.json({ error: "Senha deve ter pelo menos 6 caracteres" }, { status: 400 })
+    }
+    const bcrypt = await import("bcryptjs")
+    const hashed = await bcrypt.hash(newPassword, 10)
+    await sql`UPDATE users SET password = ${hashed} WHERE id = ${userId}`
+    return NextResponse.json({ success: true })
   }
 
-  // Impede alterar o próprio plano via admin (proteção extra)
+  // Alterar plano
+  if (!plan || !["free", "pro"].includes(plan)) {
+    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
+  }
   if (userId === session.user.id) {
     return NextResponse.json({ error: "Não é possível alterar seu próprio plano aqui" }, { status: 400 })
   }

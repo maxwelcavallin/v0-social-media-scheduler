@@ -16,7 +16,11 @@ export default async function AdminUsersPage() {
       u.created_at,
       u.is_super_admin,
       COALESCE(us.plan, 'free') as plan,
+      us.updated_at as plan_updated_at,
+      (SELECT c.id FROM company c JOIN company_member cm ON cm.company_id = c.id WHERE cm.user_id = u.id LIMIT 1) as company_id,
       (SELECT c.name FROM company c JOIN company_member cm ON cm.company_id = c.id WHERE cm.user_id = u.id LIMIT 1) as company_name,
+      (SELECT c.document FROM company c JOIN company_member cm ON cm.company_id = c.id WHERE cm.user_id = u.id LIMIT 1) as company_document,
+      (SELECT cm.role FROM company_member cm WHERE cm.user_id = u.id LIMIT 1) as company_role,
       (SELECT COUNT(*)::int FROM "organization" o JOIN "member" m ON m.organization_id = o.id WHERE m.user_id = u.id) as workspace_count
     FROM users u
     LEFT JOIN user_subscriptions us ON us.user_id = u.id
