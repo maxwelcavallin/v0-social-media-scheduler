@@ -3,6 +3,10 @@
     {
       "path": "/api/queue/process",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/media/cleanup",
+      "schedule": "0 3 * * *"
     }
   ]
 }
