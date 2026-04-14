@@ -15,6 +15,7 @@ import {
   Link2,
   Zap,
   Shield,
+  Mic,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -62,6 +63,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/calendar", label: "Calendário", icon: CalendarDays },
   { href: "/dashboard/posts", label: "Posts", icon: ImageIcon },
+  { href: "/dashboard/tts", label: "Text to Voice", icon: Mic },
   { href: "/dashboard/plans", label: "Planos", icon: Zap },
   { href: "/dashboard/settings", label: "Configurações", icon: Settings },
 ]
