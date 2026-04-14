@@ -92,7 +92,7 @@ const postTypeOptions = [
   { value: "story", label: "Story" },
 ]
 
-const MAX_SIZE_MB = 15
+const MAX_SIZE_MB = 500
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
 const getAccept = (postType: string) => {

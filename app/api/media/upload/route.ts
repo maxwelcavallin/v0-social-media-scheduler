@@ -4,7 +4,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client"
 
 export const maxDuration = 60
 
-const MAX_SIZE_MB = 15
+const MAX_SIZE_MB = 500
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
