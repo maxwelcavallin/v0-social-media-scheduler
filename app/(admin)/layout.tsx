@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
-
-export const dynamic = "force-dynamic"
 import Link from "next/link"
 import Image from "next/image"
 import { Shield } from "lucide-react"
+
+export const dynamic = "force-dynamic"
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
