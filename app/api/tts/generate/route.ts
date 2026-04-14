@@ -66,6 +66,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Gemini não retornou áudio" }, { status: 502 })
     }
 
+    // O Gemini TTS retorna PCM raw (audio/L16, 24kHz, mono) — precisa de header WAV para ser reproduzível
+    let finalB64 = audioB64
+    let finalMime = mimeType
+    if (mimeType.includes("L16") || mimeType.includes("pcm") || mimeType.includes("raw")) {
+      const pcmBuffer = Buffer.from(audioB64, "base64")
+      finalB64 = pcmToWav(pcmBuffer, 24000, 1, 16).toString("base64")
+      finalMime = "audio/wav"
+    }
+
     // Salva no histórico
     const config = { voiceName, voiceStyle, voiceMaturity, narrativeRole, tonality, provider }
     const textPreview = text.slice(0, 200)
@@ -76,11 +85,35 @@ export async function POST(req: NextRequest) {
         (${session.user.id}, ${text}, ${voiceName}, ${voiceStyle ?? null}, ${voiceMaturity ?? null}, ${narrativeRole ?? null}, ${tonality ?? null}, ${textPreview}, ${text}, ${voiceName}, ${JSON.stringify(config)})
     `
 
-    return NextResponse.json({ audioB64, mimeType })
+    return NextResponse.json({ audioB64: finalB64, mimeType: finalMime })
   } catch (err: any) {
     console.error("[TTS] Erro:", err)
     return NextResponse.json({ error: err.message || "Erro inesperado" }, { status: 500 })
   }
+}
+
+// Converte buffer PCM raw para WAV com header RIFF correto
+function pcmToWav(pcm: Buffer, sampleRate: number, channels: number, bitDepth: number): Buffer {
+  const byteRate = (sampleRate * channels * bitDepth) / 8
+  const blockAlign = (channels * bitDepth) / 8
+  const dataSize = pcm.length
+  const header = Buffer.alloc(44)
+
+  header.write("RIFF", 0)
+  header.writeUInt32LE(36 + dataSize, 4)
+  header.write("WAVE", 8)
+  header.write("fmt ", 12)
+  header.writeUInt32LE(16, 16)            // PCM chunk size
+  header.writeUInt16LE(1, 20)             // AudioFormat = PCM
+  header.writeUInt16LE(channels, 22)
+  header.writeUInt32LE(sampleRate, 24)
+  header.writeUInt32LE(byteRate, 28)
+  header.writeUInt16LE(blockAlign, 32)
+  header.writeUInt16LE(bitDepth, 34)
+  header.write("data", 36)
+  header.writeUInt32LE(dataSize, 40)
+
+  return Buffer.concat([header, pcm])
 }
 
 function buildStyleInstructions({
