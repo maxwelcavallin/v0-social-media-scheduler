@@ -13,7 +13,9 @@ export default async function DashboardPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const [workspaces, recentPosts, stats] = await Promise.all([
+  let workspaces: any[] = [], recentPosts: any[] = [], stats: any[] = []
+  try {
+    ;[workspaces, recentPosts, stats] = await Promise.all([
     sql`
       SELECT o.id, o.name, o.slug, o.logo, o.created_at,
         COUNT(DISTINCT sa.id)::int as accounts_count,
@@ -44,7 +46,7 @@ export default async function DashboardPage() {
       GROUP BY p.id, p.content, p.status, p.scheduled_at, p.created_at, o.name
       ORDER BY p.created_at DESC
       LIMIT 5
-    `,
+    `.catch((e: any) => { console.error("[v0] recentPosts query error:", e.message); return [] }),
     sql`
       SELECT
         COUNT(DISTINCT p.id) FILTER (WHERE p.status = 'scheduled')::int as scheduled,
@@ -56,7 +58,11 @@ export default async function DashboardPage() {
       LEFT JOIN social_accounts sa ON sa.workspace_id = o.id AND sa.is_active = true
       WHERE m.user_id = ${session.user.id}
     `,
-  ])
+    ])
+  } catch (e: any) {
+    console.error("[v0] dashboard page error:", e.message, e.stack)
+    throw e
+  }
 
   const statsData = stats[0] || { scheduled: 0, published: 0, connected_accounts: 0 }
 
