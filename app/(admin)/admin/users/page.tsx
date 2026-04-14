@@ -24,10 +24,9 @@ export default async function AdminUsersPage() {
       c.document AS company_document,
       cm2.role AS company_role,
       COALESCE(wcount.cnt, 0)::int AS workspace_count,
-      COALESCE(uff.tts_enabled, false) AS tts_enabled
+      COALESCE((SELECT enabled FROM user_feature_flags WHERE user_id = u.id AND flag = 'tts'), false) AS tts_enabled
     FROM users u
     LEFT JOIN user_subscriptions us ON us.user_id = u.id
-    LEFT JOIN user_feature_flags uff ON uff.user_id = u.id
     LEFT JOIN LATERAL (
       SELECT cm.company_id, cm.role FROM company_member cm WHERE cm.user_id = u.id LIMIT 1
     ) cm2 ON true

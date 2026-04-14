@@ -16,9 +16,9 @@ export default async function TTSPage() {
   if (!session) redirect("/login")
 
   const rows = await sql`
-    SELECT tts_enabled FROM user_feature_flags WHERE user_id = ${session.user.id} LIMIT 1
+    SELECT enabled FROM user_feature_flags WHERE user_id = ${session.user.id} AND flag = 'tts' LIMIT 1
   `
-  if (!rows[0]?.tts_enabled) redirect("/dashboard")
+  if (!rows[0]?.enabled) redirect("/dashboard")
 
   return <TTSView />
 }

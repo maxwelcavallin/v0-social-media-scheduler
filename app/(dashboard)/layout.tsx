@@ -33,12 +33,12 @@ export default async function DashboardLayout({
       LIMIT 1
     `.catch(() => []),
     sql`SELECT is_super_admin FROM users WHERE id = ${session.user.id} LIMIT 1`.catch(() => []),
-    sql`SELECT tts_enabled FROM user_feature_flags WHERE user_id = ${session.user.id} LIMIT 1`.catch(() => []),
+    sql`SELECT enabled FROM user_feature_flags WHERE user_id = ${session.user.id} AND flag = 'tts' LIMIT 1`.catch(() => []),
   ])
 
   const company = companyRows[0] ?? null
   const isSuperAdmin = adminRows[0]?.is_super_admin === true
-  const featureFlags = { tts_enabled: flagRows[0]?.tts_enabled ?? false }
+  const featureFlags = { tts_enabled: flagRows[0]?.enabled === true }
 
   return (
     <div className="min-h-screen bg-background font-sans flex">

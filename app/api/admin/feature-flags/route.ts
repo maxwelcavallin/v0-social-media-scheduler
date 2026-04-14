@@ -18,8 +18,10 @@ export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId")
   if (!userId) return NextResponse.json({ error: "userId obrigatório" }, { status: 400 })
 
-  const rows = await sql`SELECT * FROM user_feature_flags WHERE user_id = ${userId} LIMIT 1`
-  return NextResponse.json({ flags: rows[0] ?? { user_id: userId, tts_enabled: false } })
+  const rows = await sql`SELECT flag, enabled FROM user_feature_flags WHERE user_id = ${userId}`
+  const flags: Record<string, boolean> = {}
+  for (const row of rows) flags[row.flag] = row.enabled
+  return NextResponse.json({ flags: { tts_enabled: flags["tts"] ?? false } })
 }
 
 // PATCH — atualiza uma flag de um usuário
@@ -35,20 +37,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
   }
 
-  const allowedFlags = ["tts_enabled"]
-  if (!allowedFlags.includes(flag)) {
+  // Mapeia nome da flag do frontend para o valor EAV no banco
+  const flagMap: Record<string, string> = { tts_enabled: "tts" }
+  const dbFlag = flagMap[flag]
+  if (!dbFlag) {
     return NextResponse.json({ error: "Flag inválida" }, { status: 400 })
   }
 
-  // Upsert — cria ou atualiza a linha de flags do usuário
-  if (flag === "tts_enabled") {
-    await sql`
-      INSERT INTO user_feature_flags (user_id, tts_enabled, updated_at)
-      VALUES (${userId}, ${value}, NOW())
-      ON CONFLICT (user_id)
-      DO UPDATE SET tts_enabled = ${value}, updated_at = NOW()
-    `
-  }
+  // Upsert EAV — conflict em (user_id, flag)
+  await sql`
+    INSERT INTO user_feature_flags (user_id, flag, enabled, updated_at)
+    VALUES (${userId}, ${dbFlag}, ${value}, NOW())
+    ON CONFLICT (user_id, flag)
+    DO UPDATE SET enabled = ${value}, updated_at = NOW()
+  `
 
   return NextResponse.json({ success: true })
 }
