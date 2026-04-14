@@ -51,12 +51,17 @@ interface Company {
   role: string
 }
 
+interface FeatureFlags {
+  tts_enabled: boolean
+}
+
 interface Props {
   workspaces: Workspace[]
   user: User
   plan?: "free" | "pro"
   company?: Company | null
   isSuperAdmin?: boolean
+  featureFlags?: FeatureFlags
 }
 
 const navItems = [
@@ -76,7 +81,7 @@ const workspaceNavItems = (workspaceId: string) => [
   { href: `/workspace/${workspaceId}/settings`, label: "Configurações", icon: Settings },
 ]
 
-export function DashboardSidebar({ workspaces, user, plan = "free", company, isSuperAdmin }: Props) {
+export function DashboardSidebar({ workspaces, user, plan = "free", company, isSuperAdmin, featureFlags }: Props) {
   const pathname = usePathname()
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -86,9 +91,15 @@ export function DashboardSidebar({ workspaces, user, plan = "free", company, isS
     : null
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId)
 
+  // Filtra navItems com base nas feature flags
+  const filteredNavItems = navItems.filter((item) => {
+    if (item.href === "/dashboard/tts") return featureFlags?.tts_enabled === true
+    return true
+  })
+
   const currentNav = activeWorkspaceId
     ? workspaceNavItems(activeWorkspaceId)
-    : navItems
+    : filteredNavItems
 
   const isActive = (href: string, exact?: boolean) => {
     if (exact) return pathname === href

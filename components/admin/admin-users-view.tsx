@@ -21,7 +21,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Search, Shield, Loader2, Users, Eye, EyeOff, KeyRound, Info, Building2, Calendar, Layers } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Mic, Search, Shield, Loader2, Users, Eye, EyeOff, KeyRound, Info, Building2, Calendar, Layers } from "lucide-react"
 
 interface AdminUser {
   id: string
@@ -36,6 +37,7 @@ interface AdminUser {
   company_document: string | null
   company_role: string | null
   workspace_count: number
+  tts_enabled?: boolean
 }
 
 interface Props {
@@ -52,6 +54,33 @@ export function AdminUsersView({ users: initialUsers, currentUserId }: Props) {
 
   // Modal detalhes
   const [detailUser, setDetailUser] = useState<AdminUser | null>(null)
+
+  // Feature flags — mapa userId -> { tts_enabled }
+  const [featureFlags, setFeatureFlags] = useState<Record<string, { tts_enabled: boolean }>>(() => {
+    const map: Record<string, { tts_enabled: boolean }> = {}
+    initialUsers.forEach((u) => { map[u.id] = { tts_enabled: u.tts_enabled ?? false } })
+    return map
+  })
+  const [flagLoadingId, setFlagLoadingId] = useState<string | null>(null)
+
+  const handleFlagToggle = async (userId: string, flag: string, value: boolean) => {
+    setFlagLoadingId(userId + flag)
+    try {
+      const res = await fetch("/api/admin/feature-flags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, flag, value }),
+      })
+      if (res.ok) {
+        setFeatureFlags((prev) => ({
+          ...prev,
+          [userId]: { ...prev[userId], [flag]: value },
+        }))
+      }
+    } finally {
+      setFlagLoadingId(null)
+    }
+  }
 
   // Modal troca de senha
   const [passwordUser, setPasswordUser] = useState<AdminUser | null>(null)
@@ -255,6 +284,20 @@ export function AdminUsersView({ users: initialUsers, currentUserId }: Props) {
                     </div>
                   )}
 
+                  {/* Feature flags */}
+                  <div className="flex items-center gap-2 shrink-0" title="Text to Voice">
+                    {flagLoadingId === user.id + "tts_enabled"
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                      : <Mic className="w-3.5 h-3.5 text-muted-foreground" />
+                    }
+                    <Switch
+                      checked={featureFlags[user.id]?.tts_enabled ?? false}
+                      onCheckedChange={(v) => handleFlagToggle(user.id, "tts_enabled", v)}
+                      disabled={!!flagLoadingId}
+                      aria-label="Ativar Text to Voice"
+                    />
+                  </div>
+
                   {/* Ações */}
                   <div className="flex items-center gap-1 shrink-0">
                     <Button
@@ -385,6 +428,33 @@ export function AdminUsersView({ users: initialUsers, currentUserId }: Props) {
                 ) : (
                   <p className="text-sm text-muted-foreground">Nenhuma empresa cadastrada.</p>
                 )}
+              </div>
+
+              <div className="h-px bg-border" />
+
+              {/* Feature Flags */}
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Funcionalidades</p>
+                <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <Mic className="w-4 h-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Text to Voice</p>
+                      <p className="text-xs text-muted-foreground">Geração de áudio com IA</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {flagLoadingId === detailUser.id + "tts_enabled" && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                    )}
+                    <Switch
+                      checked={featureFlags[detailUser.id]?.tts_enabled ?? false}
+                      onCheckedChange={(v) => handleFlagToggle(detailUser.id, "tts_enabled", v)}
+                      disabled={!!flagLoadingId}
+                      aria-label="Ativar Text to Voice"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-1">

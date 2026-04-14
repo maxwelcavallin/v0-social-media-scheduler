@@ -16,7 +16,7 @@ export default async function DashboardLayout({
     redirect("/login")
   }
 
-  const [workspaces, plan, companyRows, adminRows] = await Promise.all([
+  const [workspaces, plan, companyRows, adminRows, flagRows] = await Promise.all([
     sql`
       SELECT o.id, o.name, o.slug, o.logo
       FROM "organization" o
@@ -33,14 +33,16 @@ export default async function DashboardLayout({
       LIMIT 1
     `,
     sql`SELECT is_super_admin FROM users WHERE id = ${session.user.id} LIMIT 1`,
+    sql`SELECT tts_enabled FROM user_feature_flags WHERE user_id = ${session.user.id} LIMIT 1`,
   ])
 
   const company = companyRows[0] ?? null
   const isSuperAdmin = adminRows[0]?.is_super_admin === true
+  const featureFlags = { tts_enabled: flagRows[0]?.tts_enabled ?? false }
 
   return (
     <div className="min-h-screen bg-background font-sans flex">
-      <DashboardSidebar workspaces={workspaces} user={session.user} plan={plan} company={company} isSuperAdmin={isSuperAdmin} />
+      <DashboardSidebar workspaces={workspaces} user={session.user} plan={plan} company={company} isSuperAdmin={isSuperAdmin} featureFlags={featureFlags} />
       <div className="flex-1 flex flex-col min-w-0">
         <DashboardHeader user={session.user} />
         <main className="flex-1 p-6 overflow-auto">
