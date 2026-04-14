@@ -24,6 +24,7 @@ import {
   Loader2,
   Trash2,
   Volume2,
+  ChevronRight,
   RotateCcw,
   History,
   Sparkles,
@@ -112,15 +113,12 @@ const TONALITIES = [
 interface HistoryItem {
   id: string
   text_preview: string
-  full_text: string | null
   voice_name: string
   config: {
-    voiceName?: string
     voiceStyle?: string
     voiceMaturity?: string
     narrativeRole?: string
     tonality?: string
-    provider?: string
   }
   created_at: string
 }
@@ -141,8 +139,6 @@ export function TTSView() {
 
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
-  const [loadingHistoryId, setLoadingHistoryId] = useState<string | null>(null)
-  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -154,60 +150,9 @@ export function TTSView() {
       .finally(() => setHistoryLoading(false))
   }, [])
 
-  // Carrega áudio de um item do histórico re-gerando via API
-  const loadFromHistory = async (item: HistoryItem) => {
-    const textToUse = item.full_text || item.text_preview
-    if (!textToUse) return
-
-    setLoadingHistoryId(item.id)
-    setActiveHistoryId(null)
-    setError(null)
-    setAudioB64(null)
-    setPlaying(false)
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
-
-    try {
-      const res = await fetch("/api/tts/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: textToUse,
-          voiceName: item.voice_name,
-          voiceStyle: item.config?.voiceStyle,
-          voiceMaturity: item.config?.voiceMaturity,
-          narrativeRole: item.config?.narrativeRole,
-          tonality: item.config?.tonality,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error || "Erro ao carregar áudio"); return }
-
-      // Preenche os campos com as configurações do histórico
-      setText(textToUse)
-      setVoiceName(item.voice_name)
-      if (item.config?.voiceStyle) setVoiceStyle(item.config.voiceStyle)
-      if (item.config?.voiceMaturity) setVoiceMaturity(item.config.voiceMaturity)
-      if (item.config?.narrativeRole) setNarrativeRole(item.config.narrativeRole)
-      if (item.config?.tonality) setTonality(item.config.tonality)
-
-      setAudioB64(data.audioB64)
-      setMimeType(data.mimeType || "audio/wav")
-      setActiveHistoryId(item.id)
-
-      // Atualiza histórico
-      const h = await fetch("/api/tts/history").then((r) => r.json())
-      setHistory(h.history || [])
-    } catch (e: any) {
-      setError(e.message || "Erro inesperado")
-    } finally {
-      setLoadingHistoryId(null)
-    }
-  }
-
   const generate = async () => {
     if (!text.trim()) { setError("Insira um texto para gerar o áudio."); return }
     setLoading(true)
-    setActiveHistoryId(null)
     setError(null)
     setAudioB64(null)
     setPlaying(false)
@@ -512,69 +457,45 @@ export function TTSView() {
                 </div>
               ) : (
                 <ul className="divide-y divide-border">
-                  {history.map((item) => {
-                    const isActive = activeHistoryId === item.id
-                    const isLoadingThis = loadingHistoryId === item.id
-                    return (
-                      <li
-                        key={item.id}
-                        className={cn(
-                          "flex items-start gap-2 px-4 py-3 group transition-colors cursor-pointer",
-                          isActive ? "bg-primary/8 border-l-2 border-primary" : "hover:bg-muted/40",
-                          isLoadingThis && "opacity-70 pointer-events-none"
-                        )}
-                        onClick={() => loadFromHistory(item)}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-foreground truncate leading-relaxed">
-                            {item.text_preview || "Sem texto"}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">{item.voice_name}</Badge>
-                            {item.config?.tonality && (
-                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                                {TONALITIES.find(t => t.value === item.config.tonality)?.label || item.config.tonality}
-                              </Badge>
-                            )}
-                            {isActive && (
-                              <Badge className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">
-                                <Volume2 className="w-2.5 h-2.5 mr-1" />
-                                Carregado
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-muted-foreground mt-1">
-                            {new Date(item.created_at).toLocaleDateString("pt-BR", {
-                              day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-                              timeZone: "America/Sao_Paulo"
-                            })}
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-1 shrink-0 items-center justify-center">
-                          {isLoadingThis ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                          ) : (
-                            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); reuseHistory(item) }}
-                                title="Reutilizar configurações sem re-gerar"
-                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); deleteHistory(item.id) }}
-                                title="Excluir"
-                                className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                  {history.map((item) => (
+                    <li key={item.id} className="flex items-start gap-2 px-4 py-3 hover:bg-muted/40 group transition-colors">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground truncate leading-relaxed">
+                          {item.text_preview || "Sem texto"}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">{item.voice_name}</Badge>
+                          {item.config?.tonality && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {TONALITIES.find(t => t.value === item.config.tonality)?.label || item.config.tonality}
+                            </Badge>
                           )}
                         </div>
-                      </li>
-                    )
-                  })}
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {new Date(item.created_at).toLocaleDateString("pt-BR", {
+                            day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+                            timeZone: "America/Sao_Paulo"
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button
+                          onClick={() => reuseHistory(item)}
+                          title="Reutilizar configurações"
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => deleteHistory(item.id)}
+                          title="Excluir"
+                          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
                 </ul>
               )}
             </CardContent>

@@ -10,7 +10,7 @@ export async function GET() {
 
   try {
     const rows = await sql`
-      SELECT id, text_preview, full_text, voice_name, config, created_at
+      SELECT id, text_preview, voice_name, config, created_at
       FROM tts_history
       WHERE user_id = ${session.user.id}
       ORDER BY created_at DESC
