@@ -70,8 +70,10 @@ export async function POST(req: NextRequest) {
     const config = { voiceName, voiceStyle, voiceMaturity, narrativeRole, tonality, provider }
     const textPreview = text.slice(0, 200)
     await sql`
-      INSERT INTO tts_history (user_id, text_preview, full_text, voice_name, config)
-      VALUES (${session.user.id}, ${textPreview}, ${text}, ${voiceName}, ${JSON.stringify(config)})
+      INSERT INTO tts_history
+        (user_id, text, voice, voice_style, voice_maturity, narrative_role, tone, text_preview, full_text, voice_name, config)
+      VALUES
+        (${session.user.id}, ${text}, ${voiceName}, ${voiceStyle ?? null}, ${voiceMaturity ?? null}, ${narrativeRole ?? null}, ${tonality ?? null}, ${textPreview}, ${text}, ${voiceName}, ${JSON.stringify(config)})
     `
 
     return NextResponse.json({ audioB64, mimeType })
