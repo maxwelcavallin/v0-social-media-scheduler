@@ -23,17 +23,17 @@ export default async function DashboardLayout({
       JOIN "member" m ON o.id = m.organization_id
       WHERE m.user_id = ${session.user.id}
       ORDER BY o.created_at ASC
-    `,
-    getUserPlan(session.user.id),
+    `.catch(() => []),
+    getUserPlan(session.user.id).catch(() => "free" as const),
     sql`
       SELECT c.id, c.name, c.document, cm.role
       FROM company c
       JOIN company_member cm ON cm.company_id = c.id
       WHERE cm.user_id = ${session.user.id}
       LIMIT 1
-    `,
-    sql`SELECT is_super_admin FROM users WHERE id = ${session.user.id} LIMIT 1`,
-    sql`SELECT tts_enabled FROM user_feature_flags WHERE user_id = ${session.user.id} LIMIT 1`,
+    `.catch(() => []),
+    sql`SELECT is_super_admin FROM users WHERE id = ${session.user.id} LIMIT 1`.catch(() => []),
+    sql`SELECT tts_enabled FROM user_feature_flags WHERE user_id = ${session.user.id} LIMIT 1`.catch(() => []),
   ])
 
   const company = companyRows[0] ?? null
