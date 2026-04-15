@@ -79,25 +79,43 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Step2 result — status:", llRes.status, "error:", llData.error, "has_token:", !!llData.access_token)
     const longToken = llData.access_token || shortToken
 
-    // Step 3: Buscar perfil do usuário incluindo followers_count e account_type
-    const profileUrl = `${GRAPH_IG}/${igUserId}?fields=id,name,username,profile_picture_url,account_type,followers_count&access_token=${longToken}`
-    console.log("[v0] Step3 — buscando perfil para igUserId:", igUserId)
+    // Step 3: Buscar perfil via /me (campos básicos garantidos por instagram_business_basic)
+    // Não incluir followers_count aqui — causa erro 500 em apps sem revisão avançada
+    const profileUrl = `${GRAPH_IG}/me?fields=id,username,name,profile_picture_url,account_type&access_token=${longToken}`
+    console.log("[v0] Step3 — buscando perfil via /me")
     const profileRes = await fetch(profileUrl)
     const profile = await profileRes.json()
-    console.log("[v0] Step3 result — status:", profileRes.status, "profile.id:", profile.id, "profile.error:", JSON.stringify(profile.error))
+    console.log("[v0] Step3 result", {
+      status: profileRes.status,
+      id: profile.id,
+      username: profile.username,
+      account_type: profile.account_type,
+      error: profile.error,
+    })
 
-    if (profile.error) {
+    if (!profileRes.ok || !profile.id) {
       console.error("[v0] Profile fetch failed:", {
         status: profileRes.status,
         error: profile.error,
         igUserId,
         usedLongToken: !!llData.access_token,
-        profileUrl: profileUrl.replace(longToken, "[TOKEN]"),
       })
       return NextResponse.json(
-        { error: `Não foi possível obter o perfil: ${profile.error.message || JSON.stringify(profile.error)}` },
+        { error: `Não foi possível obter o perfil: ${profile.error?.message || JSON.stringify(profile)}` },
         { status: 400 }
       )
+    }
+
+    // Step 3b: Buscar followers_count separadamente com fallback (campo avançado — pode falhar)
+    let followersCount: number | null = null
+    try {
+      const followersRes = await fetch(`${GRAPH_IG}/me?fields=followers_count&access_token=${longToken}`)
+      if (followersRes.ok) {
+        const followersData = await followersRes.json()
+        followersCount = followersData.followers_count ?? null
+      }
+    } catch {
+      // ignorado — followers_count é opcional
     }
 
     // Long-lived token expira em 60 dias
@@ -136,7 +154,7 @@ export async function POST(request: NextRequest) {
         name: profile.name,
         profile_picture_url: profile.profile_picture_url,
         account_type: profile.account_type,
-        followers_count: profile.followers_count,
+        followers_count: followersCount,
         token_expires_at: tokenExpiresAt.toISOString(),
       },
     })
