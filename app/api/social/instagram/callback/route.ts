@@ -38,15 +38,6 @@ export async function GET(request: NextRequest) {
 
   const rawState = searchParams.get("state")
 
-  console.log("[Instagram OAuth Callback]", {
-    codeFromUrl: code ? code.substring(0, 20) + "..." : null,
-    codeLength: code?.length,
-    parsedByNextJs: searchParams.get("code")?.substring(0, 20),
-    igual: code === searchParams.get("code"),
-    state: rawState?.substring(0, 30),
-    error,
-  })
-
   // Validação de state (CSRF)
   let workspaceId = ""
   let stateRedirectUri = ""

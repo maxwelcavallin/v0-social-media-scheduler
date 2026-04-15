@@ -4,9 +4,6 @@ import sql from "@/lib/db"
 
 const IG_API = "https://api.instagram.com"
 const GRAPH_IG = "https://graph.instagram.com"
-// Deve ser idêntico ao client_id usado no authorize
-const CLIENT_ID = "2170374997100265"
-// Deve ser idêntico ao redirect_uri cadastrado no painel Meta para esse app
 const REDIRECT_URI = "https://social.list.dog/api/social/instagram/callback"
 
 export async function POST(request: NextRequest) {
@@ -19,9 +16,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
-  const appSecret = process.env.INSTAGRAM_APP_KEY
+  const CLIENT_ID = process.env.INSTAGRAM_APP_ID
+  const appSecret = process.env.INSTAGRAM_APP_SECRET
 
-  if (!appSecret) {
+  if (!CLIENT_ID || !appSecret) {
+    console.error("[Instagram Process] Env vars ausentes — INSTAGRAM_APP_ID:", !!CLIENT_ID, "INSTAGRAM_APP_SECRET:", !!appSecret)
     return NextResponse.json({ error: "Configuração interna ausente." }, { status: 500 })
   }
 
@@ -41,8 +40,6 @@ export async function POST(request: NextRequest) {
       `redirect_uri=${encodeURIComponent(usedRedirectUri)}`,
       `code=${rawCodeMatch}`,
     ].join("&")
-
-    console.log("[Instagram Token Request]", bodyString.replace(appSecret, "[HIDDEN]").replace(/code=([^&]{10})[^&]*/g, "code=$1..."))
 
     const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
