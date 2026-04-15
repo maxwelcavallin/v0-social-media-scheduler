@@ -65,9 +65,9 @@ export async function POST(request: NextRequest) {
     const llData = await llRes.json()
     const longToken = llData.access_token || shortToken
 
-    // Step 3: Buscar perfil do usuário
+    // Step 3: Buscar perfil do usuário incluindo followers_count e account_type
     const profileRes = await fetch(
-      `${GRAPH_IG}/${igUserId}?fields=id,name,username,profile_picture_url,account_type&access_token=${longToken}`
+      `${GRAPH_IG}/${igUserId}?fields=id,name,username,profile_picture_url,account_type,followers_count&access_token=${longToken}`
     )
     const profile = await profileRes.json()
 
@@ -78,23 +78,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Step 4: Salvar conta Instagram
+    // Long-lived token expira em 60 dias
+    const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+
+    // Step 4: Salvar conta Instagram com token_expires_at
     await sql`
       INSERT INTO social_accounts
         (workspace_id, platform, account_id, page_id, account_name, account_username,
-         profile_picture_url, access_token, is_active, last_sync_at, created_at, updated_at)
+         profile_picture_url, access_token, token_expires_at, is_active, last_sync_at, created_at, updated_at)
       VALUES
         (${workspaceId}, 'instagram', ${profile.id}, NULL,
          ${profile.name || profile.username || "Instagram"},
          ${profile.username || null},
          ${profile.profile_picture_url || null},
-         ${longToken}, true, NOW(), NOW(), NOW())
+         ${longToken}, ${tokenExpiresAt.toISOString()}, true, NOW(), NOW(), NOW())
       ON CONFLICT (workspace_id, platform, account_id)
       DO UPDATE SET
         account_name        = EXCLUDED.account_name,
         account_username    = EXCLUDED.account_username,
         profile_picture_url = EXCLUDED.profile_picture_url,
         access_token        = EXCLUDED.access_token,
+        token_expires_at    = EXCLUDED.token_expires_at,
         page_id             = NULL,
         is_active           = true,
         last_sync_at        = NOW(),
@@ -105,6 +109,14 @@ export async function POST(request: NextRequest) {
       success: true,
       saved: 1,
       accounts: [`@${profile.username || profile.name}`],
+      profile: {
+        username: profile.username,
+        name: profile.name,
+        profile_picture_url: profile.profile_picture_url,
+        account_type: profile.account_type,
+        followers_count: profile.followers_count,
+        token_expires_at: tokenExpiresAt.toISOString(),
+      },
     })
   } catch {
     return NextResponse.json(
