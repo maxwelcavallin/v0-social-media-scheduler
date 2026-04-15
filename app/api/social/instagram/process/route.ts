@@ -64,26 +64,38 @@ export async function POST(request: NextRequest) {
     const shortToken = tokenData.access_token
     const igUserId = tokenData.user_id?.toString()
 
+    console.log("[v0] Step1 OK — shortToken:", !!shortToken, "igUserId:", igUserId)
+
     if (!shortToken || !igUserId) {
+      console.error("[v0] Token inválido — tokenData:", tokenData)
       return NextResponse.json({ error: "Token inválido recebido." }, { status: 400 })
     }
 
     // Step 2: Trocar por Long-Lived Token (60 dias)
-    const llRes = await fetch(
-      `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
-    )
+    const llUrl = `${GRAPH_IG}/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
+    console.log("[v0] Step2 — trocando por long-lived token...")
+    const llRes = await fetch(llUrl)
     const llData = await llRes.json()
+    console.log("[v0] Step2 result — status:", llRes.status, "error:", llData.error, "has_token:", !!llData.access_token)
     const longToken = llData.access_token || shortToken
 
     // Step 3: Buscar perfil do usuário incluindo followers_count e account_type
-    const profileRes = await fetch(
-      `${GRAPH_IG}/${igUserId}?fields=id,name,username,profile_picture_url,account_type,followers_count&access_token=${longToken}`
-    )
+    const profileUrl = `${GRAPH_IG}/${igUserId}?fields=id,name,username,profile_picture_url,account_type,followers_count&access_token=${longToken}`
+    console.log("[v0] Step3 — buscando perfil para igUserId:", igUserId)
+    const profileRes = await fetch(profileUrl)
     const profile = await profileRes.json()
+    console.log("[v0] Step3 result — status:", profileRes.status, "profile.id:", profile.id, "profile.error:", JSON.stringify(profile.error))
 
     if (profile.error) {
+      console.error("[v0] Profile fetch failed:", {
+        status: profileRes.status,
+        error: profile.error,
+        igUserId,
+        usedLongToken: !!llData.access_token,
+        profileUrl: profileUrl.replace(longToken, "[TOKEN]"),
+      })
       return NextResponse.json(
-        { error: "Não foi possível obter o perfil do Instagram." },
+        { error: `Não foi possível obter o perfil: ${profile.error.message || JSON.stringify(profile.error)}` },
         { status: 400 }
       )
     }
@@ -128,9 +140,10 @@ export async function POST(request: NextRequest) {
         token_expires_at: tokenExpiresAt.toISOString(),
       },
     })
-  } catch {
+  } catch (e: any) {
+    console.error("[v0] Instagram process — erro inesperado:", e?.message, e?.stack)
     return NextResponse.json(
-      { error: "Ocorreu um erro inesperado. Tente novamente em instantes." },
+      { error: `Erro inesperado: ${e?.message || "desconhecido"}` },
       { status: 500 }
     )
   }
