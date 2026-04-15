@@ -254,30 +254,20 @@ async function publishToInstagram(item: {
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
   // Contas conectadas via Facebook Login usam graph.facebook.com com page_id
-  // Contas conectadas via Instagram Login direto usam graph.instagram.com com /me
+  // Contas conectadas via Instagram Login direto usam graph.instagram.com com /me e token na query string
   const isDirectIg = !page_id
   const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
-  // Para IG direto: endpoint é /me/media; para FB: /{account_id}/media
-  const mediaEndpoint = isDirectIg ? `${baseApi}/me/media` : `${baseApi}/${account_id}/media`
-  const publishEndpoint = isDirectIg ? `${baseApi}/me/media_publish` : `${baseApi}/${account_id}/media_publish`
+  const mediaEndpoint = isDirectIg
+    ? `${baseApi}/me/media?access_token=${access_token}`
+    : `${baseApi}/${account_id}/media`
+  const publishEndpoint = isDirectIg
+    ? `${baseApi}/me/media_publish?access_token=${access_token}`
+    : `${baseApi}/${account_id}/media_publish`
 
-  console.log("[v0] Instagram publish — isDirectIg:", isDirectIg, "account_id:", account_id, "baseApi:", baseApi)
-
-  const buildContainerParams = (
-    url: string,
-    isVideo: boolean,
-    mediaType: string,
-    caption?: string,
-    isCarouselItem?: boolean,
-    coverUrl?: string | null,
-  ) => {
-    const params: Record<string, string | boolean> = { media_type: mediaType, access_token }
-    if (isVideo) params.video_url = url
-    else params.image_url = url
-    if (caption) params.caption = caption
-    if (isCarouselItem) params.is_carousel_item = true
-    if (coverUrl) params.cover_url = coverUrl
-    return params
+  // Para IG direto, token já está na query string — não incluir no body
+  const makeBody = (params: Record<string, string | boolean>) => {
+    if (isDirectIg) return JSON.stringify(params)
+    return JSON.stringify({ ...params, access_token })
   }
 
   if (media_urls.length === 1) {
@@ -287,26 +277,22 @@ async function publishToInstagram(item: {
 
     let mediaType: string
     if (isReel) mediaType = "REELS"
-    else if (isStory && isVideo) mediaType = "VIDEO" // IG direto não aceita "STORIES" como media_type
+    else if (isStory && isVideo) mediaType = "VIDEO"
     else if (isVideo) mediaType = "VIDEO"
     else mediaType = "IMAGE"
 
-    const containerBody = buildContainerParams(
-      media_urls[0],
-      isVideo,
-      mediaType,
-      !isStory && content ? content : undefined,
-      false,
-      isReel ? cover_url : null,
-    )
+    const containerParams: Record<string, string | boolean> = { media_type: mediaType }
+    if (isVideo) containerParams.video_url = media_urls[0]
+    else containerParams.image_url = media_urls[0]
+    if (!isStory && content) containerParams.caption = content
+    if (isReel && cover_url) containerParams.cover_url = cover_url
 
     const containerRes = await fetch(mediaEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(containerBody),
+      body: makeBody(containerParams),
     })
     const containerData = await containerRes.json()
-    console.log("[v0] Container result — status:", containerRes.status, "id:", containerData.id, "error:", containerData.error)
     if (containerData.error) throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
 
     await waitForContainer(containerData.id, access_token, isVideo ? 120000 : 15000, isDirectIg)
@@ -314,7 +300,7 @@ async function publishToInstagram(item: {
     const publishRes = await fetch(publishEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creation_id: containerData.id, access_token }),
+      body: makeBody({ creation_id: containerData.id }),
     })
     const publishData = await publishRes.json()
     if (publishData.error) throw new Error(publishData.error.message)
@@ -326,27 +312,26 @@ async function publishToInstagram(item: {
   for (let i = 0; i < media_urls.length; i++) {
     const url = media_urls[i]
     const isItemVideo = media_types?.[i] === "video"
-    const itemBody = buildContainerParams(url, isItemVideo, isItemVideo ? "VIDEO" : "IMAGE", undefined, true)
+    const itemParams: Record<string, string | boolean> = {
+      media_type: isItemVideo ? "VIDEO" : "IMAGE",
+      is_carousel_item: true,
+    }
+    if (isItemVideo) itemParams.video_url = url
+    else itemParams.image_url = url
     const r = await fetch(mediaEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(itemBody),
+      body: makeBody(itemParams),
     })
     const d = await r.json()
     if (d.error) throw new Error(`Item ${i + 1}: ${d.error.message}`)
     itemIds.push(d.id)
   }
 
-  const carouselBody: Record<string, string> = {
-    media_type: "CAROUSEL",
-    children: itemIds.join(","),
-    caption: content,
-    access_token,
-  }
   const carouselRes = await fetch(mediaEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(carouselBody),
+    body: makeBody({ media_type: "CAROUSEL", children: itemIds.join(","), caption: content }),
   })
   const carouselData = await carouselRes.json()
   if (carouselData.error) throw new Error(carouselData.error.message)
@@ -356,7 +341,7 @@ async function publishToInstagram(item: {
   const publishRes = await fetch(publishEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ creation_id: carouselData.id, access_token }),
+    body: makeBody({ creation_id: carouselData.id }),
   })
   const publishData = await publishRes.json()
   if (publishData.error) throw new Error(publishData.error.message)
