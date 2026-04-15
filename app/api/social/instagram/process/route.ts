@@ -27,20 +27,27 @@ export async function POST(request: NextRequest) {
 
   try {
     // Step 1: Trocar código por Short-Lived Access Token
-    // client_id e redirect_uri DEVEM ser idênticos aos usados no authorize
     const usedRedirectUri = redirectUri || REDIRECT_URI
-    const tokenBody = new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: appSecret,
-      grant_type: "authorization_code",
-      redirect_uri: usedRedirectUri,
-      code,
-    })
+
+    // Extrai o code bruto da URL recebida (evita re-encoding por URLSearchParams)
+    // O code pode conter caracteres como AQ... que o URLSearchParams re-encoda incorretamente
+    const rawCodeMatch = (request as any)._rawCode || code
+
+    // Monta body manualmente sem re-encodar o code
+    const bodyString = [
+      `client_id=${CLIENT_ID}`,
+      `client_secret=${appSecret}`,
+      `grant_type=authorization_code`,
+      `redirect_uri=${encodeURIComponent(usedRedirectUri)}`,
+      `code=${rawCodeMatch}`,
+    ].join("&")
+
+    console.log("[Instagram Token Request]", bodyString.replace(appSecret, "[HIDDEN]").replace(/code=([^&]{10})[^&]*/g, "code=$1..."))
 
     const tokenRes = await fetch(`${IG_API}/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: tokenBody.toString(),
+      body: bodyString,
     })
     const tokenData = await tokenRes.json()
 
