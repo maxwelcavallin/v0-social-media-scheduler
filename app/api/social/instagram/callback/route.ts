@@ -1,5 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+// Proteção contra dupla execução (Strict Mode do React / retry do browser)
+// Códigos OAuth são de uso único — processar duas vezes gera "Error validating verification code"
+const processedCodes = new Set<string>()
+
 // Retorna HTML que envia postMessage para a janela pai e fecha o popup
 function popupResponse(data: Record<string, string | null>) {
   const json = JSON.stringify(data)
@@ -23,28 +27,51 @@ function popupResponse(data: Record<string, string | null>) {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
-  const code = searchParams.get("code")
-  const rawState = searchParams.get("state")
   const error = searchParams.get("error")
 
+  // Extração segura — remove fragmentos (#) e espaços que o Instagram pode adicionar
+  const rawCode = searchParams.get("code")
+  const code = rawCode?.split("#")[0].trim() ?? null
+
+  const rawState = searchParams.get("state")
+
+  // Log para diagnóstico — remove após confirmar funcionamento
+  console.log("[Instagram OAuth Callback]", {
+    code: code ? code.substring(0, 20) + "..." : null,
+    codeLength: code?.length,
+    state: rawState?.substring(0, 30),
+    error,
+    fullUrl: request.url.replace(rawCode ?? "", "[CODE]"),
+  })
+
+  // Validação de state (CSRF)
   let workspaceId = ""
+  let stateRedirectUri = ""
   try {
     const decoded = JSON.parse(atob(rawState || ""))
     workspaceId = decoded.workspaceId || ""
+    stateRedirectUri = decoded.redirectUri || ""
   } catch {
-    workspaceId = rawState || ""
+    console.error("[Instagram OAuth] State inválido ou ausente:", rawState)
+    return popupResponse({ type: "instagram_oauth_callback", error: "invalid_state", code: null, redirectUri: null })
+  }
+
+  if (!workspaceId) {
+    return popupResponse({ type: "instagram_oauth_callback", error: "invalid_state", code: null, redirectUri: null })
   }
 
   if (error || !code) {
-    return popupResponse({
-      type: "instagram_oauth_callback",
-      error: error || "missing_params",
-      code: null,
-      redirectUri: null,
-    })
+    return popupResponse({ type: "instagram_oauth_callback", error: error || "missing_params", code: null, redirectUri: null })
   }
 
-  // O redirect_uri deve ser idêntico ao cadastrado no painel Meta
+  // Proteção contra dupla execução do mesmo código
+  if (processedCodes.has(code)) {
+    console.warn("[Instagram OAuth] Código já processado — ignorando segunda execução:", code.substring(0, 20))
+    return popupResponse({ type: "instagram_oauth_callback", error: "code_already_used", code: null, redirectUri: null })
+  }
+  processedCodes.add(code)
+  setTimeout(() => processedCodes.delete(code), 5 * 60 * 1000)
+
   const redirectUri = "https://social.list.dog/api/social/instagram/callback"
 
   return popupResponse({

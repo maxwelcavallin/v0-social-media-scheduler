@@ -45,6 +45,12 @@ export async function POST(request: NextRequest) {
     const tokenData = await tokenRes.json()
 
     if (!tokenRes.ok || tokenData.error_type || tokenData.error) {
+      console.error("[Instagram Token Exchange Failed]", {
+        status: tokenRes.status,
+        error: tokenData,
+        redirect_uri_used: usedRedirectUri,
+        client_id_used: CLIENT_ID,
+      })
       return NextResponse.json(
         { error: `Erro ao autenticar: ${tokenData.error_message || tokenData.error?.message || JSON.stringify(tokenData)}` },
         { status: 400 }
