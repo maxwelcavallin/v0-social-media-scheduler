@@ -25,7 +25,7 @@ export async function POST(
   // Busca mídias e targets do original
   const [media, targets] = await Promise.all([
     sql`
-      SELECT url, media_type, order_index, thumbnail_url
+      SELECT url, media_type, order_index
       FROM post_media WHERE post_id = ${postId} ORDER BY order_index ASC
     `,
     sql`
@@ -45,8 +45,8 @@ export async function POST(
   if (media.length > 0) {
     for (const m of media) {
       await sql`
-        INSERT INTO post_media (post_id, url, media_type, order_index, thumbnail_url)
-        VALUES (${newPost.id}, ${m.url}, ${m.media_type}, ${m.order_index}, ${m.thumbnail_url ?? null})
+        INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
+        VALUES (gen_random_uuid(), ${newPost.id}, ${m.url}, ${m.media_type}, ${m.order_index}, NOW())
       `
     }
   }
@@ -55,8 +55,8 @@ export async function POST(
   if (targets.length > 0) {
     for (const t of targets) {
       await sql`
-        INSERT INTO post_targets (post_id, social_account_id, post_type)
-        VALUES (${newPost.id}, ${t.social_account_id}, ${t.post_type})
+        INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
+        VALUES (gen_random_uuid(), ${newPost.id}, ${t.social_account_id}, ${t.post_type}, 'pending', NOW())
       `
     }
   }

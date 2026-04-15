@@ -4,6 +4,7 @@ import sql from "@/lib/db"
 import { checkPostsThisMonth } from "@/lib/plans"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
+const GRAPH_IG = "https://graph.instagram.com/v22.0"
 
 // ─── publish helpers (inline, no HTTP hop) ───────────────────────────────────
 
@@ -73,46 +74,42 @@ async function publishToFacebook(item: {
 async function publishToInstagram(item: {
   access_token: string
   account_id: string
+  page_id: string | null
   content: string
   media_urls: string[] | null
   media_types: string[] | null
   post_type: string
   cover_url?: string | null
 }): Promise<string> {
-  const { access_token, account_id, content, media_urls, media_types, post_type, cover_url } = item
+  const { access_token, account_id, page_id, content, media_urls, media_types, post_type, cover_url } = item
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
+
+  // Contas IG direto (page_id = null) usam graph.instagram.com/me
+  // Contas via Facebook usam graph.facebook.com/{account_id}
+  const isDirectIg = !page_id
+  const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
+  const mediaEndpoint = isDirectIg ? `${baseApi}/me/media` : `${baseApi}/${account_id}/media`
+  const publishEndpoint = isDirectIg ? `${baseApi}/me/media_publish` : `${baseApi}/${account_id}/media_publish`
 
   if (media_urls.length === 1) {
     const isStory = post_type === "story"
     const isReel = post_type === "reel"
     const isVideo = media_types?.[0] === "video" || isReel
 
-    // Determine media_type correctly for Instagram Graph API
     let mediaType: string
     if (isReel) mediaType = "REELS"
     else if (isStory) mediaType = "STORIES"
     else if (isVideo) mediaType = "VIDEO"
     else mediaType = "IMAGE"
 
-    const containerBody: Record<string, string | boolean> = {
-      media_type: mediaType,
-      access_token,
-    }
-    if (isVideo) {
-      containerBody.video_url = media_urls[0]
-    } else {
-      containerBody.image_url = media_urls[0]
-    }
-    if (!isStory && content) {
-      containerBody.caption = content
-    }
-    // Reel cover image — Instagram accepts cover_url for REELS
-    if (isReel && cover_url) {
-      containerBody.cover_url = cover_url
-    }
+    const containerBody: Record<string, string | boolean> = { media_type: mediaType, access_token }
+    if (isVideo) containerBody.video_url = media_urls[0]
+    else containerBody.image_url = media_urls[0]
+    if (!isStory && content) containerBody.caption = content
+    if (isReel && cover_url) containerBody.cover_url = cover_url
 
-    const containerRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
+    const containerRes = await fetch(mediaEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(containerBody),
@@ -122,27 +119,20 @@ async function publishToInstagram(item: {
       throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
     }
 
-    // Poll until ready — videos take longer than images
     const maxPoll = isVideo ? 30 : 8
     const pollInterval = isVideo ? 4000 : 1500
     let lastStatusCode = ""
     for (let i = 0; i < maxPoll; i++) {
       await new Promise((r) => setTimeout(r, pollInterval))
-      const statusRes = await fetch(
-        `${GRAPH_API}/${containerData.id}?fields=status_code,status&access_token=${access_token}`
-      )
+      const statusRes = await fetch(`${baseApi}/${containerData.id}?fields=status_code,status&access_token=${access_token}`)
       const statusData = await statusRes.json()
       lastStatusCode = statusData.status_code
       if (lastStatusCode === "FINISHED") break
-      if (lastStatusCode === "ERROR") {
-        throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
-      }
+      if (lastStatusCode === "ERROR") throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
     }
-    if (lastStatusCode && lastStatusCode !== "FINISHED") {
-      throw new Error(`Tempo esgotado aguardando processamento (status: ${lastStatusCode})`)
-    }
+    if (lastStatusCode && lastStatusCode !== "FINISHED") throw new Error(`Tempo esgotado aguardando processamento (status: ${lastStatusCode})`)
 
-    const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
+    const publishRes = await fetch(publishEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ creation_id: containerData.id, access_token }),
@@ -155,7 +145,7 @@ async function publishToInstagram(item: {
   // Carousel
   const itemIds: string[] = []
   for (const url of media_urls) {
-    const r = await fetch(`${GRAPH_API}/${account_id}/media`, {
+    const r = await fetch(mediaEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token }),
@@ -164,28 +154,23 @@ async function publishToInstagram(item: {
     if (d.error) throw new Error(d.error.message)
     itemIds.push(d.id)
   }
-  const carouselRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
+  const carouselRes = await fetch(mediaEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      media_type: "CAROUSEL",
-      children: itemIds.join(","),
-      caption: content,
-      access_token,
-    }),
+    body: JSON.stringify({ media_type: "CAROUSEL", children: itemIds.join(","), caption: content, access_token }),
   })
   const carouselData = await carouselRes.json()
   if (carouselData.error) throw new Error(carouselData.error.message)
 
   for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 2000))
-    const statusRes = await fetch(`${GRAPH_API}/${carouselData.id}?fields=status_code&access_token=${access_token}`)
+    const statusRes = await fetch(`${baseApi}/${carouselData.id}?fields=status_code&access_token=${access_token}`)
     const statusData = await statusRes.json()
     if (statusData.status_code === "FINISHED") break
     if (statusData.status_code === "ERROR") throw new Error("Falha ao processar carousel no Instagram")
   }
 
-  const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
+  const publishRes = await fetch(publishEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ creation_id: carouselData.id, access_token }),
@@ -331,14 +316,15 @@ export async function POST(request: NextRequest) {
               media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
               media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
             })
-  } else if (target.platform === "instagram") {
-  platformPostId = await publishToInstagram({
-  access_token: target.accessToken,
-  account_id: target.accountIdMeta,
-  content,
-  media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
-  media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
-  cover_url: coverMedia?.url ?? null,
+          } else if (target.platform === "instagram") {
+            platformPostId = await publishToInstagram({
+              access_token: target.accessToken,
+              account_id: target.accountIdMeta,
+              page_id: target.pageId,
+              content,
+              media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
+              media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
+              cover_url: coverMedia?.url ?? null,
               post_type: postType,
             })
           }

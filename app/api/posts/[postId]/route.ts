@@ -72,7 +72,6 @@ export async function PATCH(
     UPDATE posts
     SET content = ${content || ""},
         scheduled_at = ${finalScheduledAt},
-        post_type = ${postType || "feed"},
         status = ${newStatus},
         updated_at = NOW()
     WHERE id = ${postId}
@@ -85,18 +84,18 @@ export async function PATCH(
       for (let i = 0; i < media.length; i++) {
         const m = media[i]
         await sql`
-          INSERT INTO post_media (post_id, url, media_type, position, created_at)
-          VALUES (${postId}, ${m.url}, ${m.type || "image"}, ${i}, NOW())
+          INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
+          VALUES (gen_random_uuid(), ${postId}, ${m.url}, ${m.type || "image"}, ${i}, NOW())
         `
       }
     }
-    // Capa do reel
+    // Capa do reel salva com order_index = -1
     if (coverMedia?.url) {
       await sql`
-        UPDATE posts SET cover_url = ${coverMedia.url}, updated_at = NOW() WHERE id = ${postId}
+        INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
+        VALUES (gen_random_uuid(), ${postId}, ${coverMedia.url}, 'image', -1, NOW())
+        ON CONFLICT DO NOTHING
       `
-    } else if (media !== undefined) {
-      await sql`UPDATE posts SET cover_url = NULL, updated_at = NOW() WHERE id = ${postId}`
     }
   }
 
