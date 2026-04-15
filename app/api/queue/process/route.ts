@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import sql from "@/lib/db"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
+const GRAPH_IG = "https://graph.instagram.com/v22.0"
 
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300
@@ -99,6 +100,7 @@ async function processQueue() {
           platformPostId = await publishToInstagram({
             access_token: target.access_token,
             account_id: target.account_id,
+            page_id: target.page_id,
             content: item.content,
             media_urls: item.media_urls,
             media_types: item.media_types,
@@ -240,15 +242,43 @@ async function publishToFacebook(item: {
 async function publishToInstagram(item: {
   access_token: string
   account_id: string
+  page_id: string | null
   content: string
   media_urls: string[] | null
   media_types: string[] | null
   post_type: string
   cover_url?: string | null
 }): Promise<string> {
-  const { access_token, account_id, content, media_urls, media_types, post_type, cover_url } = item
+  const { access_token, account_id, page_id, content, media_urls, media_types, post_type, cover_url } = item
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
+
+  // Contas conectadas via Facebook Login usam graph.facebook.com com page_id
+  // Contas conectadas via Instagram Login direto usam graph.instagram.com com /me
+  const isDirectIg = !page_id
+  const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
+  // Para IG direto: endpoint é /me/media; para FB: /{account_id}/media
+  const mediaEndpoint = isDirectIg ? `${baseApi}/me/media` : `${baseApi}/${account_id}/media`
+  const publishEndpoint = isDirectIg ? `${baseApi}/me/media_publish` : `${baseApi}/${account_id}/media_publish`
+
+  console.log("[v0] Instagram publish — isDirectIg:", isDirectIg, "account_id:", account_id, "baseApi:", baseApi)
+
+  const buildContainerParams = (
+    url: string,
+    isVideo: boolean,
+    mediaType: string,
+    caption?: string,
+    isCarouselItem?: boolean,
+    coverUrl?: string | null,
+  ) => {
+    const params: Record<string, string | boolean> = { media_type: mediaType, access_token }
+    if (isVideo) params.video_url = url
+    else params.image_url = url
+    if (caption) params.caption = caption
+    if (isCarouselItem) params.is_carousel_item = true
+    if (coverUrl) params.cover_url = coverUrl
+    return params
+  }
 
   if (media_urls.length === 1) {
     const isStory = post_type === "story"
@@ -257,27 +287,31 @@ async function publishToInstagram(item: {
 
     let mediaType: string
     if (isReel) mediaType = "REELS"
-    else if (isStory) mediaType = "STORIES"
+    else if (isStory && isVideo) mediaType = "VIDEO" // IG direto não aceita "STORIES" como media_type
     else if (isVideo) mediaType = "VIDEO"
     else mediaType = "IMAGE"
 
-    const containerBody: Record<string, string | boolean> = { media_type: mediaType, access_token }
-    if (isVideo) containerBody.video_url = media_urls[0]
-    else containerBody.image_url = media_urls[0]
-    if (!isStory && content) containerBody.caption = content
-    if (isReel && cover_url) containerBody.cover_url = cover_url
+    const containerBody = buildContainerParams(
+      media_urls[0],
+      isVideo,
+      mediaType,
+      !isStory && content ? content : undefined,
+      false,
+      isReel ? cover_url : null,
+    )
 
-    const containerRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
+    const containerRes = await fetch(mediaEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(containerBody),
     })
     const containerData = await containerRes.json()
-    if (containerData.error) throw new Error(`Container: ${containerData.error.message} [${containerData.error.code}]`)
+    console.log("[v0] Container result — status:", containerRes.status, "id:", containerData.id, "error:", containerData.error)
+    if (containerData.error) throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
 
-    await waitForContainer(containerData.id, access_token, isVideo ? 120000 : 15000)
+    await waitForContainer(containerData.id, access_token, isVideo ? 120000 : 15000, isDirectIg)
 
-    const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
+    const publishRes = await fetch(publishEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ creation_id: containerData.id, access_token }),
@@ -292,31 +326,34 @@ async function publishToInstagram(item: {
   for (let i = 0; i < media_urls.length; i++) {
     const url = media_urls[i]
     const isItemVideo = media_types?.[i] === "video"
-    const r = await fetch(`${GRAPH_API}/${account_id}/media`, {
+    const itemBody = buildContainerParams(url, isItemVideo, isItemVideo ? "VIDEO" : "IMAGE", undefined, true)
+    const r = await fetch(mediaEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(isItemVideo ? { video_url: url, media_type: "VIDEO" } : { image_url: url }),
-        is_carousel_item: true,
-        access_token,
-      }),
+      body: JSON.stringify(itemBody),
     })
     const d = await r.json()
     if (d.error) throw new Error(`Item ${i + 1}: ${d.error.message}`)
     itemIds.push(d.id)
   }
 
-  const carouselRes = await fetch(`${GRAPH_API}/${account_id}/media`, {
+  const carouselBody: Record<string, string> = {
+    media_type: "CAROUSEL",
+    children: itemIds.join(","),
+    caption: content,
+    access_token,
+  }
+  const carouselRes = await fetch(mediaEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ media_type: "CAROUSEL", children: itemIds.join(","), caption: content, access_token }),
+    body: JSON.stringify(carouselBody),
   })
   const carouselData = await carouselRes.json()
   if (carouselData.error) throw new Error(carouselData.error.message)
 
-  await waitForContainer(carouselData.id, access_token, 30000)
+  await waitForContainer(carouselData.id, access_token, 30000, isDirectIg)
 
-  const publishRes = await fetch(`${GRAPH_API}/${account_id}/media_publish`, {
+  const publishRes = await fetch(publishEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ creation_id: carouselData.id, access_token }),
@@ -326,10 +363,11 @@ async function publishToInstagram(item: {
   return publishData.id
 }
 
-async function waitForContainer(containerId: string, token: string, maxWaitMs = 30000): Promise<void> {
+async function waitForContainer(containerId: string, token: string, maxWaitMs = 30000, isDirectIg = false): Promise<void> {
+  const api = isDirectIg ? GRAPH_IG : GRAPH_API
   const start = Date.now()
   while (Date.now() - start < maxWaitMs) {
-    const res = await fetch(`${GRAPH_API}/${containerId}?fields=status_code,status&access_token=${token}`)
+    const res = await fetch(`${api}/${containerId}?fields=status_code,status&access_token=${token}`)
     const data = await res.json()
     if (data.status_code === "FINISHED") return
     if (data.status_code === "ERROR") throw new Error(`Container failed: ${data.status || "unknown"}`)
