@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import sql from "@/lib/db"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
-const GRAPH_IG = "https://graph.instagram.com/v22.0"
+const GRAPH_IG = "https://graph.instagram.com"
 
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300

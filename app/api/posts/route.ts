@@ -4,7 +4,7 @@ import sql from "@/lib/db"
 import { checkPostsThisMonth } from "@/lib/plans"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
-const GRAPH_IG = "https://graph.instagram.com/v22.0"
+const GRAPH_IG = "https://graph.instagram.com"
 
 // ─── publish helpers (inline, no HTTP hop) ───────────────────────────────────
 
