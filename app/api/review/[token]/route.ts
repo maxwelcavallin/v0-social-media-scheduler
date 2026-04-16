@@ -22,6 +22,7 @@ export async function GET(
       sa.account_username,
       sa.profile_picture_url,
       sa.platform,
+      MAX(pt.post_type) AS post_type,
       COALESCE(
         json_agg(
           json_build_object('url', pm.url, 'media_type', pm.media_type, 'order_index', pm.order_index)

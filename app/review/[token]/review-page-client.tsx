@@ -49,7 +49,7 @@ function FeedPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
   const longCaption = post.content && post.content.length > maxCaption
 
   return (
-    <div className="bg-white border border-[#DBDBDB] rounded-sm overflow-hidden w-full max-w-[468px]">
+    <div className="bg-white border border-[#DBDBDB] rounded-lg sm:rounded-sm overflow-hidden w-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5">
@@ -167,7 +167,7 @@ function StoryPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
   }, [idx, media.length])
 
   return (
-    <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ width: "100%", maxWidth: 340, aspectRatio: "9/16" }}>
+    <div className="relative rounded-2xl overflow-hidden shadow-2xl w-full" style={{ aspectRatio: "9/16" }}>
       {/* Background media */}
       {current ? (
         current.media_type === "video"
@@ -257,7 +257,7 @@ function ReelsPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
   }
 
   return (
-    <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ width: "100%", maxWidth: 340, aspectRatio: "9/16" }}>
+    <div className="relative rounded-2xl overflow-hidden shadow-2xl w-full" style={{ aspectRatio: "9/16" }}>
       {/* Video */}
       {current?.media_type === "video" ? (
         <video ref={videoRef} src={current.url} autoPlay loop muted={muted} playsInline
@@ -414,14 +414,14 @@ export default function ReviewPageClient({ token }: { token: string }) {
   return (
     <div className="min-h-screen bg-[#FAFAFA] font-sans">
       {/* Header */}
-      <header className="bg-white border-b border-[#DBDBDB] sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+      <header className="bg-white border-b border-[#DBDBDB] sticky top-0 z-20">
+        <div className="w-full max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <p className="text-[10px] text-[#8E8E8E] uppercase tracking-widest font-medium">Revisão de conteúdo</p>
             <h1 className="text-sm font-semibold text-[#262626]">Aprovação de publicação</h1>
           </div>
           <span className={cn(
-            "text-[11px] font-semibold px-2.5 py-1 rounded-full",
+            "text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap",
             submitted && decision === "approved" ? "bg-green-100 text-green-700"
               : submitted && decision === "needs_changes" ? "bg-amber-100 text-amber-700"
               : "bg-[#F0F0F0] text-[#8E8E8E]"
@@ -433,7 +433,7 @@ export default function ReviewPageClient({ token }: { token: string }) {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6 flex flex-col items-center gap-6">
+      <main className="w-full max-w-xl mx-auto px-3 sm:px-4 py-4 flex flex-col items-center gap-4">
 
         {/* Label do formato */}
         <div className="w-full flex items-center justify-between">
@@ -445,8 +445,8 @@ export default function ReviewPageClient({ token }: { token: string }) {
           </span>
         </div>
 
-        {/* Simulação do post */}
-        <div className="w-full flex justify-center">
+        {/* Simulação do post — story e reels ficam centralizados em 9:16, feed ocupa largura total */}
+        <div className={cn("w-full flex justify-center", (isStory || isReel) ? "px-6 sm:px-12" : "")}>
           {isStory ? (
             <StoryPost post={post} media={media} />
           ) : isReel ? (
