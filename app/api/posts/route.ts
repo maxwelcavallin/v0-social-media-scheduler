@@ -85,17 +85,18 @@ async function publishToInstagram(item: {
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
-  // page_id preenchido = conectado via Facebook Login → usar graph.facebook.com/{page_id}
-  // page_id null = conectado via Instagram Login direto → usar graph.instagram.com/me
+  // page_id preenchido = conectado via Facebook Login → usar graph.facebook.com/{account_id} com Page Token
+  // page_id null = conectado via Instagram Login direto → usar graph.instagram.com/me com token na query
+  // Nota: account_id é o Instagram Business Account ID; page_id é a Facebook Page ID.
+  // O endpoint correto é /{ig_account_id}/media usando o Page Access Token (salvo em access_token).
   const isDirectIg = !page_id
   const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
-  const igFbTarget = page_id // Para FB Login, o container é criado na Page, não no account_id
   const mediaEndpoint = isDirectIg
     ? `${baseApi}/me/media?access_token=${access_token}`
-    : `${baseApi}/${igFbTarget}/media`
+    : `${baseApi}/${account_id}/media`
   const publishEndpoint = isDirectIg
     ? `${baseApi}/me/media_publish?access_token=${access_token}`
-    : `${baseApi}/${igFbTarget}/media_publish`
+    : `${baseApi}/${account_id}/media_publish`
 
   // Monta o body sem access_token para IG direto (já está na query string)
   const makeBody = (params: Record<string, string | boolean>) => {

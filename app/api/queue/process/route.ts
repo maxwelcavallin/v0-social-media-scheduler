@@ -255,17 +255,17 @@ async function publishToInstagram(item: {
 
   // Contas conectadas via Facebook Login usam graph.facebook.com com page_id
   // Contas conectadas via Instagram Login direto usam graph.instagram.com com /me e token na query string
-  // page_id preenchido = conectado via Facebook Login → usar graph.facebook.com/{page_id}
-  // page_id null = conectado via Instagram Login direto → usar graph.instagram.com/me
+  // page_id preenchido = conectado via Facebook Login → usar graph.facebook.com/{account_id} com Page Token
+  // page_id null = conectado via Instagram Login direto → usar graph.instagram.com/me com token na query
+  // account_id = Instagram Business Account ID; o Page Token está salvo em access_token
   const isDirectIg = !page_id
   const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
-  const igFbTarget = page_id // Para FB Login, o container é criado na Page, não no account_id
   const mediaEndpoint = isDirectIg
     ? `${baseApi}/me/media?access_token=${access_token}`
-    : `${baseApi}/${igFbTarget}/media`
+    : `${baseApi}/${account_id}/media`
   const publishEndpoint = isDirectIg
     ? `${baseApi}/me/media_publish?access_token=${access_token}`
-    : `${baseApi}/${igFbTarget}/media_publish`
+    : `${baseApi}/${account_id}/media_publish`
 
   // Para IG direto, token já está na query string — não incluir no body
   const makeBody = (params: Record<string, string | boolean>) => {
