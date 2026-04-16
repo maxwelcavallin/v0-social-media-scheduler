@@ -91,21 +91,16 @@ async function publishToInstagram(item: {
   // O endpoint correto é /{ig_account_id}/media usando o Page Access Token (salvo em access_token).
   const isDirectIg = !page_id
   const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
+  // Ambas as APIs aceitam token na query string — mais confiável que no body
   const mediaEndpoint = isDirectIg
     ? `${baseApi}/me/media?access_token=${access_token}`
-    : `${baseApi}/${account_id}/media`
+    : `${baseApi}/${account_id}/media?access_token=${access_token}`
   const publishEndpoint = isDirectIg
     ? `${baseApi}/me/media_publish?access_token=${access_token}`
-    : `${baseApi}/${account_id}/media_publish`
+    : `${baseApi}/${account_id}/media_publish?access_token=${access_token}`
 
-  // Monta o body sem access_token para IG direto (já está na query string)
-  const makeBody = (params: Record<string, string | boolean>) => {
-    if (isDirectIg) {
-      const { access_token: _t, ...rest } = params as any
-      return JSON.stringify(rest)
-    }
-    return JSON.stringify({ ...params, access_token })
-  }
+  // Token já está na query string — não incluir no body
+  const makeBody = (params: Record<string, string | boolean>) => JSON.stringify(params)
 
   if (media_urls.length === 1) {
     const isStory = post_type === "story"
