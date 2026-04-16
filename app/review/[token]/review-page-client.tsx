@@ -418,7 +418,6 @@ export default function ReviewPageClient({ token }: { token: string }) {
         <div className="w-full max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <p className="text-[10px] text-[#8E8E8E] uppercase tracking-widest font-medium">Revisão de conteúdo</p>
-            <h1 className="text-sm font-semibold text-[#262626]">Aprovação de publicação</h1>
           </div>
           <span className={cn(
             "text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap",
