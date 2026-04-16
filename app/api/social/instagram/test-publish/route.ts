@@ -63,26 +63,6 @@ export async function POST(req: Request) {
   const apiResponses: { step: string; url?: string; status: number; body: unknown }[] = []
 
   try {
-    // ── Passo 0: Verificar scopes do token ────────────────────────────────
-    const scopeUrl = `${GRAPH_IG}/me/permissions?access_token=${access_token}`
-    const scopeRes = await fetch(scopeUrl)
-    const scopeData = await scopeRes.json()
-    const grantedScopes: string[] = (scopeData.data || [])
-      .filter((p: any) => p.status === "granted")
-      .map((p: any) => p.permission)
-    apiResponses.push({ step: "Verificar scopes do token", url: scopeUrl, status: scopeRes.status, body: { granted: grantedScopes } })
-
-    const hasPublishScope = grantedScopes.includes("instagram_business_content_publish")
-    if (!hasPublishScope) {
-      return NextResponse.json({
-        success: false,
-        error: `O token não possui o scope 'instagram_business_content_publish'.\nScopes atuais: [${grantedScopes.join(", ")}]\n\nAção necessária: desconecte e reconecte a conta Instagram para gerar um novo token com esse scope.`,
-        action_required: "reconnect",
-        granted_scopes: grantedScopes,
-        api_responses: apiResponses,
-      }, { status: 200 })
-    }
-
     // ── Passo 1: Criar container de mídia ──────────────────────────────────
     const containerUrl = `${GRAPH_IG}/me/media`
     const containerBody = {
@@ -97,13 +77,22 @@ export async function POST(req: Request) {
       body: JSON.stringify(containerBody),
     })
     const containerData = await containerRes.json()
-    apiResponses.push({ step: "Criar container", url: containerUrl, status: containerRes.status, body: containerData })
-    console.log("[v0] test-publish: container response =", JSON.stringify(containerData))
+    apiResponses.push({ step: "Criar container de mídia", url: containerUrl, status: containerRes.status, body: containerData })
 
     if (containerData.error) {
+      const { code, message, type } = containerData.error
+
+      // code 10 = o app não tem a permissão instagram_business_content_publish aprovada
+      // Isso ocorre quando o app ainda está em modo desenvolvimento sem App Review aprovado,
+      // ou quando o usuário não está adicionado como Tester/Developer no painel Meta.
+      const appReviewError = code === 10 || type === "IGApiException"
       return NextResponse.json({
         success: false,
-        error: `Erro ao criar container: ${containerData.error.message} [código ${containerData.error.code}]`,
+        error: appReviewError
+          ? `O app Meta não tem permissão para publicar nesta conta.\n\nCausa: ${message}\n\nPara resolver:\n1. Acesse developers.facebook.com → seu app → App Review\n2. Solicite aprovação de "instagram_business_content_publish"\n   OU\n3. Adicione o usuário Instagram como Tester no painel Meta (Roles → Test Users ou Instagram Testers)`
+          : `Erro ao criar container: ${message} [código ${code}]`,
+        action_required: appReviewError ? "app_review" : undefined,
+        ig_error_code: code,
         api_responses: apiResponses,
       }, { status: 200 })
     }

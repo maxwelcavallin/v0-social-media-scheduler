@@ -14,8 +14,8 @@ import { FlaskConical, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp } 
 interface TestResult {
   success: boolean
   error?: string
-  action_required?: "reconnect"
-  granted_scopes?: string[]
+  action_required?: "reconnect" | "app_review"
+  ig_error_code?: number
   account_username?: string
   container_id?: string
   media_id?: string
@@ -94,47 +94,62 @@ export function InstagramTestButton({ accountId, accountUsername }: Props) {
             {result && (
               <>
                 {/* Status principal */}
-                <div className={`flex items-start gap-3 rounded-lg border p-4 ${
-                  result.success
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800"
-                    : result.action_required === "reconnect"
-                      ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
-                      : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
-                }`}>
-                  {result.success
-                    ? <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                    : <XCircle className={`w-5 h-5 shrink-0 mt-0.5 ${result.action_required === "reconnect" ? "text-amber-500" : "text-red-500 dark:text-red-400"}`} />
-                  }
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-semibold ${
+                {(() => {
+                  const isAmber = result.action_required === "reconnect" || result.action_required === "app_review"
+                  return (
+                    <div className={`flex items-start gap-3 rounded-lg border p-4 ${
                       result.success
-                        ? "text-emerald-800 dark:text-emerald-300"
-                        : result.action_required === "reconnect"
-                          ? "text-amber-800 dark:text-amber-300"
-                          : "text-red-700 dark:text-red-300"
+                        ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800"
+                        : isAmber
+                          ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+                          : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
                     }`}>
                       {result.success
-                        ? "Publicação realizada com sucesso"
-                        : result.action_required === "reconnect"
-                          ? "Reconexão necessária — token sem permissão de publicação"
-                          : "Falha na publicação"}
-                    </p>
-                    {result.error && (
-                      <p className={`text-xs mt-1 leading-relaxed whitespace-pre-wrap ${
-                        result.action_required === "reconnect"
-                          ? "text-amber-700 dark:text-amber-400"
-                          : "text-red-600 dark:text-red-400"
-                      }`}>
-                        {result.error}
-                      </p>
-                    )}
-                    {result.action_required === "reconnect" && (
-                      <p className="text-xs mt-2 font-medium text-amber-900 dark:text-amber-200">
-                        Clique em "Desconectar" nesta conta e reconecte-a para gerar um token atualizado com o scope de publicação.
-                      </p>
-                    )}
-                  </div>
-                </div>
+                        ? <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                        : <XCircle className={`w-5 h-5 shrink-0 mt-0.5 ${isAmber ? "text-amber-500" : "text-red-500 dark:text-red-400"}`} />
+                      }
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold ${
+                          result.success
+                            ? "text-emerald-800 dark:text-emerald-300"
+                            : isAmber
+                              ? "text-amber-800 dark:text-amber-300"
+                              : "text-red-700 dark:text-red-300"
+                        }`}>
+                          {result.success
+                            ? "Publicação realizada com sucesso"
+                            : result.action_required === "app_review"
+                              ? "Permissão negada pelo app Meta — App Review necessário"
+                              : result.action_required === "reconnect"
+                                ? "Reconexão necessária — token sem permissão de publicação"
+                                : "Falha na publicação"}
+                        </p>
+                        {result.error && (
+                          <p className={`text-xs mt-1 leading-relaxed whitespace-pre-wrap ${
+                            isAmber ? "text-amber-700 dark:text-amber-400" : "text-red-600 dark:text-red-400"
+                          }`}>
+                            {result.error}
+                          </p>
+                        )}
+                        {result.action_required === "app_review" && (
+                          <a
+                            href="https://developers.facebook.com/apps"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block mt-2 text-xs font-medium text-amber-900 dark:text-amber-200 underline underline-offset-2"
+                          >
+                            Abrir painel Meta Developers
+                          </a>
+                        )}
+                        {result.action_required === "reconnect" && (
+                          <p className="text-xs mt-2 font-medium text-amber-900 dark:text-amber-200">
+                            Desconecte e reconecte a conta para gerar um token atualizado com o scope de publicação.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {/* IDs gerados */}
                 {result.success && (
@@ -185,7 +200,7 @@ export function InstagramTestButton({ accountId, accountUsername }: Props) {
                           </button>
                           {isExpanded && (
                             <div className="border-t bg-muted/20 p-3 space-y-2">
-                              <p className="text-[10px] text-muted-foreground font-mono break-all">{r.url.split("?")[0]}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono break-all">{r.url?.split("?")[0] ?? ""}</p>
                               <pre className="text-[11px] font-mono bg-background rounded p-2 border overflow-auto max-h-48 whitespace-pre-wrap break-all">
                                 {JSON.stringify(r.body, null, 2)}
                               </pre>
