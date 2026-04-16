@@ -122,13 +122,6 @@ export async function PATCH(
       UPDATE post_targets SET post_type = ${postType} WHERE post_id = ${postId}
     `
   }
-    if (finalScheduledAt) {
-      await sql`
-        INSERT INTO post_queue (post_id, scheduled_at, status, attempts, max_attempts)
-        VALUES (${postId}, ${finalScheduledAt}, 'pending', 0, 3)
-      `
-    }
-  }
 
   return NextResponse.json({ success: true })
 }
