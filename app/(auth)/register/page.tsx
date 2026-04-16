@@ -44,8 +44,7 @@ export default function RegisterPage() {
       setError(result.error.message)
       setLoading(false)
     } else {
-      router.push("/onboarding")
-      router.refresh()
+      window.location.href = "/onboarding"
     }
   }
 

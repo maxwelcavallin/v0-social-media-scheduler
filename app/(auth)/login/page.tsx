@@ -40,8 +40,9 @@ export default function LoginPage() {
       setError(result.error.message)
       setLoading(false)
     } else {
-      router.push("/dashboard")
-      router.refresh()
+      // Hard redirect garante que o cookie seja enviado no próximo request
+      // e o proxy lê corretamente, evitando o loop infinito no preview
+      window.location.href = "/dashboard"
     }
   }
 
