@@ -61,7 +61,7 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
   // Contas da workspace
   const accounts = await sql`
     SELECT id, account_name, account_username FROM social_accounts
-    WHERE organization_id = ${workspaceId}
+    WHERE workspace_id = ${workspaceId}
     ORDER BY account_name ASC
   `
 
