@@ -1,0 +1,2 @@
+ALTER TABLE social_accounts
+  ADD COLUMN IF NOT EXISTS webhook_secret TEXT DEFAULT NULL;
