@@ -19,8 +19,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Acesso negado. Apenas administradores podem executar este teste." }, { status: 403 })
   }
 
-  const { accountId } = await req.json()
+  let body: any
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 })
+  }
+  const { accountId } = body
   if (!accountId) return NextResponse.json({ error: "accountId obrigatório" }, { status: 400 })
+
+  console.log("[v0] test-publish: accountId =", accountId)
 
   // Buscar conta Instagram sem page_id (conexão direta)
   const accountRows = await sql`
@@ -37,14 +45,19 @@ export async function POST(req: Request) {
 
   const account = accountRows[0]
   const { access_token, platform_user_id, account_username } = account
+  console.log("[v0] test-publish: account =", account_username, "| platform_user_id =", platform_user_id)
+  console.log("[v0] test-publish: imageUrl =", imageUrl)
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "https://placehold.co/1080x1080/E8F4FD/1a3a5c.jpg"
-
-  const imageUrl = appUrl
-    ? `${appUrl.replace(/\/$/, "")}/ig-test-image.jpg`
-    : "https://placehold.co/1080x1080/E8F4FD/1a3a5c.jpg"
+  // Usa URL pública confiável para que o Instagram consiga baixar a imagem.
+  // A URL local do preview não é acessível externamente pela Graph API.
+  const customUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/ig-test-image.jpg`
+    : null
+  const vercelUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}/ig-test-image.jpg`
+    : null
+  // Imagem quadrada 1:1 de 1080px via picsum.photos — sempre acessível pelo Instagram
+  const imageUrl = customUrl || vercelUrl || "https://picsum.photos/id/237/1080/1080"
 
   const apiResponses: { step: string; url: string; status: number; body: unknown }[] = []
 
@@ -64,6 +77,7 @@ export async function POST(req: Request) {
     })
     const containerData = await containerRes.json()
     apiResponses.push({ step: "Criar container", url: containerUrl, status: containerRes.status, body: containerData })
+    console.log("[v0] test-publish: container response =", JSON.stringify(containerData))
 
     if (containerData.error) {
       return NextResponse.json({
@@ -134,6 +148,7 @@ export async function POST(req: Request) {
     })
 
   } catch (err: any) {
+    console.log("[v0] test-publish: CATCH ERROR =", err?.message, err?.stack)
     return NextResponse.json({
       success: false,
       error: err.message || "Erro desconhecido",
