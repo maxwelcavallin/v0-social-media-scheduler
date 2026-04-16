@@ -81,7 +81,7 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
       WHERE p.workspace_id = ${workspaceId}
-        ${filterStatus ? sql`AND p.status = ${filterStatus}` : sql``}
+        AND (${filterStatus}::text IS NULL OR p.status = ${filterStatus})
       GROUP BY p.id
       ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
     `,
