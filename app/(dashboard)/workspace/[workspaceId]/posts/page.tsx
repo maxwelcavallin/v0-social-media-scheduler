@@ -29,6 +29,8 @@ const postTypeIcons: Record<string, React.ReactNode> = {
   story: <ImageIcon className="w-3 h-3" />,
 }
 
+const reviewStatuses = ["in_review", "approved", "needs_changes"]
+
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; className?: string }> = {
   draft: { label: "Rascunho", variant: "outline" },
   scheduled: { label: "Agendado", variant: "secondary" },
@@ -45,8 +47,11 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const validStatuses = ["draft", "scheduled", "published", "failed", "in_review", "approved", "needs_changes"]
+  const postStatuses = ["draft", "scheduled", "published", "failed"]
+  const validStatuses = [...postStatuses, ...reviewStatuses]
   const filterStatus = statusFilter && validStatuses.includes(statusFilter) ? statusFilter : null
+  // review_status é uma coluna separada — filtros de revisão usam review_status, não posts.status
+  const isReviewFilter = filterStatus ? reviewStatuses.includes(filterStatus) : false
 
   const [workspace, accounts, posts] = await Promise.all([
     sql`
@@ -81,7 +86,11 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
       WHERE p.workspace_id = ${workspaceId}
-        AND (${filterStatus}::text IS NULL OR p.status = ${filterStatus})
+        AND (
+          ${filterStatus}::text IS NULL
+          OR (${isReviewFilter} = false AND p.status = ${filterStatus})
+          OR (${isReviewFilter} = true  AND p.review_status = ${filterStatus})
+        )
       GROUP BY p.id
       ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
     `,
@@ -125,7 +134,11 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {posts.map((post: any) => {
             const postType = (post.post_types || [])[0] || "feed"
-            const status = statusMap[post.status] || { label: post.status, variant: "outline" as const }
+            // review_status tem prioridade sobre posts.status para exibição
+            const displayStatus = post.review_status && reviewStatuses.includes(post.review_status)
+              ? post.review_status
+              : post.status
+            const status = statusMap[displayStatus] || { label: displayStatus, variant: "outline" as const }
             return (
               <Card key={post.id} className="overflow-hidden hover:border-primary/30 transition-all group">
                 {/* Thumbnail */}

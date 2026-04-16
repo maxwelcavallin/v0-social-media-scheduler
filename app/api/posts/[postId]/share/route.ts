@@ -28,14 +28,13 @@ export async function POST(
     token = randomBytes(24).toString("hex")
     await sql`
       UPDATE posts
-      SET review_token = ${token}, review_status = 'in_review', status = 'in_review', updated_at = NOW()
+      SET review_token = ${token}, review_status = 'in_review', updated_at = NOW()
       WHERE id = ${postId}
     `
   } else {
-    // Garante que o status está atualizado mesmo se já tinha token
     await sql`
       UPDATE posts
-      SET status = 'in_review', review_status = 'in_review', updated_at = NOW()
+      SET review_status = 'in_review', updated_at = NOW()
       WHERE id = ${postId}
     `
   }
