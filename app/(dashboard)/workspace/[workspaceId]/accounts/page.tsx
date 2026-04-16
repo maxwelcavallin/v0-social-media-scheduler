@@ -8,6 +8,7 @@ import { AccountAvatar } from "@/components/accounts/account-avatar"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
+import { WebhookPanel } from "@/components/accounts/webhook-panel"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -188,6 +189,8 @@ function InstagramAccountCard({ account }: { account: any }) {
             <DisconnectAccountButton accountId={account.id} />
           </div>
         </div>
+
+        <WebhookPanel accountId={account.id} />
       </CardContent>
     </Card>
   )
@@ -217,6 +220,8 @@ function FacebookAccountCard({ account }: { account: any }) {
           </div>
           <DisconnectAccountButton accountId={account.id} />
         </div>
+
+        <WebhookPanel accountId={account.id} />
       </CardContent>
     </Card>
   )
