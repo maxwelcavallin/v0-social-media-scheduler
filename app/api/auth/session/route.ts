@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { COOKIE_NAME, verifySessionToken } from "@/lib/auth"
+import { verifySessionToken } from "@/lib/auth"
 
 // GET /api/auth/session?token=...&next=/dashboard
 // Retorna uma página HTML que seta o cookie via document.cookie (client-side)
@@ -18,29 +18,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url), { status: 302 })
   }
 
-  // Seta o cookie via Set-Cookie header E via JS para garantir em todos os contextos
-  const maxAge = 60 * 60 * 24 * 7
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body>
-<script>
-  document.cookie = "${COOKIE_NAME}=${token}; path=/; max-age=${maxAge}; SameSite=Lax";
-  window.location.replace(${JSON.stringify(next)});
-</script>
-</body>
-</html>`
-
-  const response = new NextResponse(html, {
-    status: 200,
-    headers: { "Content-Type": "text/html" },
-  })
-  response.cookies.set(COOKIE_NAME, token, {
-    httpOnly: false, // false para que o JS também consiga ler se necessário
-    secure: false,
-    sameSite: "lax",
-    maxAge,
-    path: "/",
-  })
-  return response
+  // Redireciona para o destino com o token na URL (?__session=...).
+  // O proxy.ts intercepta este parâmetro, seta o cookie server-side e redireciona
+  // para a mesma URL sem o token — funcionando em qualquer contexto incluindo iframe/preview.
+  const destination = new URL(next, request.url)
+  destination.searchParams.set("__session", token)
+  return NextResponse.redirect(destination, { status: 302 })
 }
