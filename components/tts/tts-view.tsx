@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -28,6 +29,8 @@ import {
   RotateCcw,
   History,
   Sparkles,
+  Settings,
+  ChevronRight as ChevronRightIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -124,6 +127,7 @@ interface HistoryItem {
 }
 
 export function TTSView() {
+  const router = useRouter()
   const [text, setText] = useState("")
   const [voiceName, setVoiceName] = useState("Puck")
   const [voiceStyle, setVoiceStyle] = useState("natural")
@@ -436,8 +440,30 @@ export function TTSView() {
           </Card>
         </div>
 
-        {/* Coluna lateral — Histórico */}
+        {/* Coluna lateral — Configurar Vozes + Histórico */}
         <div className="flex flex-col gap-4">
+
+          {/* Card: Configurar Vozes */}
+          <Card
+            className="cursor-pointer hover:border-primary/40 transition-colors"
+            onClick={() => router.push("/dashboard/tts/voices")}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Settings className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Configurar Vozes</p>
+                  <p className="text-xs text-muted-foreground">
+                    Clone e gerencie vozes do workspace
+                  </p>
+                </div>
+                <ChevronRightIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="flex-1">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
