@@ -1,14 +1,117 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import {
   CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight,
   Heart, MessageCircle, Send, Bookmark, MoreHorizontal,
-  Volume2, VolumeX, Play, Music2
+  Volume2, VolumeX, Play, Music2, Maximize2, X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+
+// ── Fullscreen viewer ─────────────────────────────────────────────────────────
+function FullscreenViewer({ media, initialIdx, onClose }: {
+  media: PostMedia[]
+  initialIdx: number
+  onClose: () => void
+}) {
+  const [idx, setIdx] = useState(initialIdx)
+  const [muted, setMuted] = useState(false)
+  const current = media[idx]
+
+  // Fecha com ESC
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+      if (e.key === "ArrowLeft") setIdx(i => Math.max(0, i - 1))
+      if (e.key === "ArrowRight") setIdx(i => Math.min(media.length - 1, i + 1))
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [media.length, onClose])
+
+  // Bloqueia scroll do body
+  useEffect(() => {
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = "" }
+  }, [])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+      onClick={onClose}
+    >
+      {/* Fecha */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+      >
+        <X className="w-5 h-5 text-white" />
+      </button>
+
+      {/* Mute (para vídeos) */}
+      {current?.media_type === "video" && (
+        <button
+          onClick={e => { e.stopPropagation(); setMuted(m => !m) }}
+          className="absolute bottom-6 right-4 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+        >
+          {muted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+        </button>
+      )}
+
+      {/* Mídia */}
+      <div className="relative w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
+        {current?.media_type === "video" ? (
+          <video
+            key={current.url}
+            src={current.url}
+            autoPlay
+            loop
+            muted={muted}
+            playsInline
+            className="max-w-full max-h-full object-contain"
+          />
+        ) : current ? (
+          <img
+            src={current.url}
+            alt="Mídia"
+            className="max-w-full max-h-full object-contain"
+          />
+        ) : null}
+      </div>
+
+      {/* Navegação carrossel */}
+      {media.length > 1 && (
+        <>
+          <button
+            onClick={e => { e.stopPropagation(); setIdx(i => Math.max(0, i - 1)) }}
+            disabled={idx === 0}
+            className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-20 hover:bg-white/20 transition-colors"
+          >
+            <ChevronLeft className="w-6 h-6 text-white" />
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setIdx(i => Math.min(media.length - 1, i + 1)) }}
+            disabled={idx === media.length - 1}
+            className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-20 hover:bg-white/20 transition-colors"
+          >
+            <ChevronRight className="w-6 h-6 text-white" />
+          </button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+            {media.map((_, i) => (
+              <button
+                key={i}
+                onClick={e => { e.stopPropagation(); setIdx(i) }}
+                className={cn("rounded-full transition-all", i === idx ? "w-2 h-2 bg-white" : "w-1.5 h-1.5 bg-white/40")}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 interface PostMedia {
   url: string
@@ -34,7 +137,7 @@ interface ReviewPost {
 type Decision = "approved" | "needs_changes"
 
 // ── Feed post simulator ───────────────────────────────────────────────────────
-function FeedPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
+function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedia[]; onExpand: (idx: number) => void }) {
   const [idx, setIdx] = useState(0)
   const [liked, setLiked] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -49,7 +152,7 @@ function FeedPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
   const longCaption = post.content && post.content.length > maxCaption
 
   return (
-    <div className="bg-white border border-[#DBDBDB] rounded-lg sm:rounded-sm overflow-hidden w-full">
+    <div className="bg-white border border-[#DBDBDB] rounded-lg sm:rounded-sm overflow-hidden w-full group">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5">
         <div className="flex items-center gap-2.5">
@@ -69,13 +172,13 @@ function FeedPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
       </div>
 
       {/* Media */}
-      <div className="relative bg-black" style={{ aspectRatio: "1/1" }}>
+      <div className="relative bg-black cursor-pointer" style={{ aspectRatio: "1/1" }} onClick={() => current && onExpand(idx)}>
         {current ? (
           current.media_type === "video" ? (
             <div className="relative w-full h-full">
               <video src={current.url} autoPlay loop muted={muted} playsInline className="w-full h-full object-cover" />
               <button
-                onClick={() => setMuted(m => !m)}
+                onClick={e => { e.stopPropagation(); setMuted(m => !m) }}
                 className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
               >
                 {muted ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
@@ -87,6 +190,12 @@ function FeedPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-[#F0F0F0]">
             <span className="text-[#8E8E8E] text-sm">Sem mídia</span>
+          </div>
+        )}
+        {/* Botão expand */}
+        {current && (
+          <div className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Maximize2 className="w-4 h-4 text-white" />
           </div>
         )}
 
@@ -139,7 +248,7 @@ function FeedPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
 }
 
 // ── Story simulator ───────────────────────────────────────────────────────────
-function StoryPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
+function StoryPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedia[]; onExpand: (idx: number) => void }) {
   const [idx, setIdx] = useState(0)
   const [muted, setMuted] = useState(true)
   const [progress, setProgress] = useState(0)
@@ -211,6 +320,14 @@ function StoryPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
         </div>
       </div>
 
+      {/* Botão expand */}
+      <button
+        onClick={e => { e.stopPropagation(); onExpand(idx) }}
+        className="absolute top-10 right-12 z-20 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center"
+      >
+        <Maximize2 className="w-4 h-4 text-white" />
+      </button>
+
       {/* Navigation tap areas */}
       <div className="absolute inset-y-0 left-0 w-1/3 z-10" onClick={() => setIdx(i => Math.max(0, i - 1))} />
       <div className="absolute inset-y-0 right-0 w-1/3 z-10" onClick={() => setIdx(i => Math.min(media.length - 1, i + 1))} />
@@ -237,7 +354,7 @@ function StoryPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
 }
 
 // ── Reels simulator ───────────────────────────────────────────────────────────
-function ReelsPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
+function ReelsPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedia[]; onExpand: (idx: number) => void }) {
   const [muted, setMuted] = useState(true)
   const [liked, setLiked] = useState(false)
   const [playing, setPlaying] = useState(true)
@@ -322,13 +439,21 @@ function ReelsPost({ post, media }: { post: ReviewPost; media: PostMedia[] }) {
         </div>
       </div>
 
-      {/* Mute button */}
-      <button
-        onClick={() => setMuted(m => !m)}
-        className="absolute top-4 right-3 z-10 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
-      >
-        {muted ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
-      </button>
+      {/* Mute e expand buttons */}
+      <div className="absolute top-4 right-3 z-10 flex flex-col gap-2">
+        <button
+          onClick={() => setMuted(m => !m)}
+          className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
+        >
+          {muted ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
+        </button>
+        <button
+          onClick={() => onExpand(0)}
+          className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
+        >
+          <Maximize2 className="w-4 h-4 text-white" />
+        </button>
+      </div>
     </div>
   )
 }
@@ -342,6 +467,10 @@ export default function ReviewPageClient({ token }: { token: string }) {
   const [notes, setNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [fullscreenIdx, setFullscreenIdx] = useState<number | null>(null)
+
+  const openFullscreen = useCallback((idx: number) => setFullscreenIdx(idx), [])
+  const closeFullscreen = useCallback(() => setFullscreenIdx(null), [])
 
   useEffect(() => {
     fetch(`/api/review/${token}`)
@@ -413,6 +542,9 @@ export default function ReviewPageClient({ token }: { token: string }) {
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] font-sans">
+      {fullscreenIdx !== null && (
+        <FullscreenViewer media={media} initialIdx={fullscreenIdx} onClose={closeFullscreen} />
+      )}
       {/* Header */}
       <header className="bg-white border-b border-[#DBDBDB] sticky top-0 z-20">
         <div className="w-full max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -447,11 +579,11 @@ export default function ReviewPageClient({ token }: { token: string }) {
         {/* Simulação do post — story e reels ficam centralizados em 9:16, feed ocupa largura total */}
         <div className={cn("w-full flex justify-center", (isStory || isReel) ? "px-6 sm:px-12" : "")}>
           {isStory ? (
-            <StoryPost post={post} media={media} />
+            <StoryPost post={post} media={media} onExpand={openFullscreen} />
           ) : isReel ? (
-            <ReelsPost post={post} media={media} />
+            <ReelsPost post={post} media={media} onExpand={openFullscreen} />
           ) : (
-            <FeedPost post={post} media={media} />
+            <FeedPost post={post} media={media} onExpand={openFullscreen} />
           )}
         </div>
 
