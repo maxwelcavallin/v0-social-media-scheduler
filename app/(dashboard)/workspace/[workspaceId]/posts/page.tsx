@@ -103,21 +103,21 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
         <h1 className="text-3xl font-bold tracking-tight">{workspace.name} — Posts</h1>
       </div>
 
-      <StatusFilter current={filterStatus} />
+      <div className="flex items-center justify-between">
+        <StatusFilter current={filterStatus} />
+        <CreatePostDialog workspaceId={workspaceId} accounts={accounts} trigger={
+          <Button size="sm" className="gap-2" disabled={accounts.length === 0}>
+            <Plus className="w-4 h-4" />
+            Novo post
+          </Button>
+        } />
+      </div>
 
       {posts.length === 0 ? (
         <EmptyState
           icon={ImageIcon}
           title="Nenhum post ainda"
           description="Crie e agende seu primeiro post para este workspace."
-          action={
-            <CreatePostDialog workspaceId={workspaceId} accounts={accounts}>
-              <Button className="gap-2" disabled={accounts.length === 0}>
-                <Plus className="w-4 h-4" />
-                Criar Post
-              </Button>
-            </CreatePostDialog>
-          }
         />
       ) : (
         <WorkspacePostsClient

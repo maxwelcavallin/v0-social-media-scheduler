@@ -6,10 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { PostDetailsDialog } from "@/components/posts/post-details-dialog"
 import { VideoThumbnail } from "@/components/posts/video-thumbnail"
 import { PostActions } from "@/components/posts/post-actions"
-import { Plus, ImageIcon, MessageSquare } from "lucide-react"
+import { ImageIcon, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { CreatePostDialog } from "@/components/posts/create-post-dialog"
-import { Button } from "@/components/ui/button"
 
 interface WorkspacePostsClientProps {
   posts: any[]
@@ -35,19 +33,6 @@ export function WorkspacePostsClient({
 
   return (
     <>
-      <div className="flex justify-end mb-4">
-        <CreatePostDialog
-          workspaceId={workspaceId}
-          accounts={accounts}
-          trigger={
-            <Button size="sm" className="gap-2">
-              <Plus className="w-4 h-4" />
-              Novo post
-            </Button>
-          }
-        />
-      </div>
-
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {posts.map((post: any) => {
           const postType = (post.post_types || [])[0] || "feed"
@@ -59,9 +44,13 @@ export function WorkspacePostsClient({
           return (
             <Card
               key={post.id}
-              onClick={() => setSelectedPostId(post.id)}
-              className="overflow-hidden hover:border-primary/30 transition-all group cursor-pointer"
+              className="overflow-hidden hover:border-primary/30 transition-all group"
             >
+              {/* Área clicável — thumbnail + legenda */}
+              <div
+                className="cursor-pointer"
+                onClick={() => setSelectedPostId(post.id)}
+              >
               {/* Thumbnail */}
               <div className="aspect-square bg-muted relative overflow-hidden">
                 {post.thumbnail ? (
@@ -132,6 +121,11 @@ export function WorkspacePostsClient({
                     {post.error_message}
                   </p>
                 )}
+              </CardContent>
+              </div>{/* fim área clicável */}
+
+              {/* Área de ações — não abre o modal */}
+              <CardContent className="p-3 pt-0" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
                     {(() => {
@@ -169,7 +163,7 @@ export function WorkspacePostsClient({
                     />
                   </div>
                 </div>
-              </CardContent>
+              </CardContent>{/* fim área de ações */}
             </Card>
           )
         })}
