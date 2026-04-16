@@ -18,6 +18,10 @@ export async function GET(
       p.review_at,
       p.scheduled_at,
       p.created_at,
+      sa.account_name,
+      sa.account_username,
+      sa.profile_picture_url,
+      sa.platform,
       COALESCE(
         json_agg(
           json_build_object('url', pm.url, 'media_type', pm.media_type, 'order_index', pm.order_index)
@@ -27,8 +31,10 @@ export async function GET(
       ) AS media
     FROM posts p
     LEFT JOIN post_media pm ON pm.post_id = p.id
+    LEFT JOIN post_targets pt ON pt.post_id = p.id
+    LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     WHERE p.review_token = ${token}
-    GROUP BY p.id
+    GROUP BY p.id, sa.account_name, sa.account_username, sa.profile_picture_url, sa.platform
     LIMIT 1
   `
 
@@ -55,15 +61,12 @@ export async function POST(
   `
   if (!post) return NextResponse.json({ error: "Link inválido" }, { status: 404 })
 
-  const newStatus = decision === "approved" ? "approved" : "needs_changes"
-
   await sql`
     UPDATE posts
     SET
       review_status = ${decision},
       review_notes = ${notes ?? null},
       review_at = NOW(),
-      status = ${newStatus},
       updated_at = NOW()
     WHERE review_token = ${token}
   `
