@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import {
   CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight,
   Heart, MessageCircle, Send, Bookmark, MoreHorizontal,
-  Volume2, VolumeX, Play, Music2, Maximize2, X
+  Volume2, VolumeX, Play, Music2, X
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -192,13 +192,6 @@ function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedi
             <span className="text-[#8E8E8E] text-sm">Sem mídia</span>
           </div>
         )}
-        {/* Botão expand */}
-        {current && (
-          <div className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <Maximize2 className="w-4 h-4 text-white" />
-          </div>
-        )}
-
         {media.length > 1 && (
           <>
             <button onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0}
@@ -320,17 +313,10 @@ function StoryPost({ post, media, onExpand }: { post: ReviewPost; media: PostMed
         </div>
       </div>
 
-      {/* Botão expand */}
-      <button
-        onClick={e => { e.stopPropagation(); onExpand(idx) }}
-        className="absolute top-10 right-12 z-20 w-8 h-8 rounded-full bg-black/40 flex items-center justify-center"
-      >
-        <Maximize2 className="w-4 h-4 text-white" />
-      </button>
-
-      {/* Navigation tap areas */}
-      <div className="absolute inset-y-0 left-0 w-1/3 z-10" onClick={() => setIdx(i => Math.max(0, i - 1))} />
-      <div className="absolute inset-y-0 right-0 w-1/3 z-10" onClick={() => setIdx(i => Math.min(media.length - 1, i + 1))} />
+      {/* Toque na área central abre fullscreen; bordas esquerda/direita navegam entre mídias */}
+      <div className="absolute inset-y-0 left-0 w-1/4 z-10 cursor-pointer" onClick={() => setIdx(i => Math.max(0, i - 1))} />
+      <div className="absolute inset-y-0 left-1/4 right-1/4 z-10 cursor-zoom-in" onClick={() => onExpand(idx)} />
+      <div className="absolute inset-y-0 right-0 w-1/4 z-10 cursor-pointer" onClick={() => setIdx(i => Math.min(media.length - 1, i + 1))} />
 
       {/* Caption */}
       {post.content && (
@@ -439,21 +425,16 @@ function ReelsPost({ post, media, onExpand }: { post: ReviewPost; media: PostMed
         </div>
       </div>
 
-      {/* Mute e expand buttons */}
-      <div className="absolute top-4 right-3 z-10 flex flex-col gap-2">
-        <button
-          onClick={() => setMuted(m => !m)}
-          className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
-        >
-          {muted ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
-        </button>
-        <button
-          onClick={() => onExpand(0)}
-          className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
-        >
-          <Maximize2 className="w-4 h-4 text-white" />
-        </button>
-      </div>
+      {/* Mute button */}
+      <button
+        onClick={e => { e.stopPropagation(); setMuted(m => !m) }}
+        className="absolute top-4 right-3 z-10 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
+      >
+        {muted ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
+      </button>
+
+      {/* Frame inteiro clicável para fullscreen (exceto botões de ação) */}
+      <div className="absolute inset-0 z-0 cursor-zoom-in" onClick={() => onExpand(0)} />
     </div>
   )
 }
