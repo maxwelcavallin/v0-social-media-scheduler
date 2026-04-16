@@ -193,10 +193,16 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
           name: m.url.split("/").pop() || "media",
         })))
         setMediaPreviews(editPost.media.map(m => m.url))
+      } else {
+        setUploadedMedia([])
+        setMediaPreviews([])
       }
       if (editPost.cover_url) {
         setCoverPreview(editPost.cover_url)
         setUploadedCover({ url: editPost.cover_url, type: "image", name: "cover" })
+      } else {
+        setCoverPreview(null)
+        setUploadedCover(null)
       }
       if (defaultScheduledAt) {
         setScheduledDates([defaultScheduledAt])
@@ -204,7 +210,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
       setCharCount(defaultContent.length)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editOpen, open])
+  }, [editOpen, open, editPost?.id])
 
   const addScheduledDate = () => setScheduledDates((prev) => [...prev, ""])
   const removeScheduledDate = (idx: number) => setScheduledDates((prev) => prev.filter((_, i) => i !== idx))

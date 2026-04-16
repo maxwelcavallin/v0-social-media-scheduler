@@ -243,6 +243,7 @@ export function PostDetailsDialog({
             post_type: (post.post_types || [])[0] || "feed",
             accountIds: post.account_ids || [],
             media: post.media || [],
+            cover_url: post.cover_url || undefined,
           }}
           editOpen={editOpen}
           onEditClose={() => {

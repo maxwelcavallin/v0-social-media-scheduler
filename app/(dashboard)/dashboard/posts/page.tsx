@@ -83,7 +83,14 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
            JOIN social_accounts sa2 ON sa2.id = pt2.social_account_id
            WHERE pt2.post_id = p.id),
           '[]'::json
-        ) AS accounts
+        ) AS accounts,
+        COALESCE(
+          (SELECT json_agg(jsonb_build_object('url', pm3.url, 'media_type', pm3.media_type, 'order_index', pm3.order_index) ORDER BY pm3.order_index ASC)
+           FROM post_media pm3 WHERE pm3.post_id = p.id AND pm3.order_index >= 0),
+          '[]'::json
+        ) AS media,
+        (SELECT pm4.url FROM post_media pm4 WHERE pm4.post_id = p.id AND pm4.order_index = -1 LIMIT 1) AS cover_url,
+        ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) AS account_ids
       FROM posts p
       JOIN "organization" o ON o.id = p.workspace_id
       JOIN "member" m ON m.organization_id = o.id

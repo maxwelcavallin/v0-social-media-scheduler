@@ -82,7 +82,11 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
       COALESCE(json_agg(DISTINCT jsonb_build_object('id', sa.id, 'account_name', sa.account_name, 'account_username', sa.account_username)) FILTER (WHERE sa.id IS NOT NULL), '[]') AS accounts,
       ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.platform IS NOT NULL) AS platforms,
       ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) AS account_ids,
-      COALESCE(json_agg(DISTINCT jsonb_build_object('url', pm.url, 'media_type', pm.media_type, 'order_index', pm.order_index)) FILTER (WHERE pm.id IS NOT NULL), '[]') AS media
+      COALESCE(
+        json_agg(jsonb_build_object('url', pm.url, 'media_type', pm.media_type, 'order_index', pm.order_index) ORDER BY pm.order_index ASC)
+        FILTER (WHERE pm.id IS NOT NULL AND pm.order_index >= 0), '[]'
+      ) AS media,
+      (SELECT pm3.url FROM post_media pm3 WHERE pm3.post_id = p.id AND pm3.order_index = -1 LIMIT 1) AS cover_url
     FROM posts p
     LEFT JOIN post_media pm ON pm.post_id = p.id
     LEFT JOIN post_targets pt ON pt.post_id = p.id
