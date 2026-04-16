@@ -3,7 +3,7 @@ import sql from "@/lib/db"
 import { redirect } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { ImageIcon, Instagram, Facebook, Film, LayoutGrid } from "lucide-react"
+import { ImageIcon, Instagram, Facebook, Film, LayoutGrid, MessageSquare } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { StatusFilter } from "@/components/posts/status-filter"
 import { DashboardPostsFilters } from "@/components/dashboard/dashboard-posts-filters"
@@ -70,7 +70,7 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
     // Posts com filtros aplicados
     sql`
       SELECT
-        p.id, p.content, p.status, p.review_status, p.scheduled_at, p.created_at,
+        p.id, p.content, p.status, p.review_status, p.review_notes, p.scheduled_at, p.created_at,
         o.id   AS workspace_id,
         o.name AS workspace_name,
         ARRAY_AGG(DISTINCT sa.platform)   FILTER (WHERE sa.id IS NOT NULL) AS platforms,
@@ -183,6 +183,14 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
                   <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed whitespace-pre-wrap">
                     {postType === "story" ? "Story" : (post.content || "Sem legenda")}
                   </p>
+                  {displayStatus === "needs_changes" && post.review_notes && (
+                    <div className="flex gap-1.5 items-start bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5 mb-2">
+                      <MessageSquare className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed whitespace-pre-wrap">
+                        {post.review_notes}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                       {(() => {

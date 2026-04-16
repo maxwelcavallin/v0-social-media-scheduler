@@ -205,10 +205,10 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
                       {post.error_message}
                     </p>
                   )}
-                  {post.status === "needs_changes" && post.review_notes && (
+                  {post.review_status === "needs_changes" && post.review_notes && (
                     <div className="flex gap-1.5 items-start bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5 mb-2">
                       <MessageSquare className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-700 dark:text-amber-400 line-clamp-2 leading-relaxed">
+                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed whitespace-pre-wrap">
                         {post.review_notes}
                       </p>
                     </div>
