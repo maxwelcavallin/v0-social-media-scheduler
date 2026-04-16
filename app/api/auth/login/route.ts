@@ -45,16 +45,13 @@ export async function POST(request: NextRequest) {
     const token = await createSessionToken({ id: user.id, name: user.name, email: user.email, plan: user.plan, isSuperAdmin: user.is_super_admin ?? false })
 
     const redirectTo = request.nextUrl.searchParams.get("redirectTo") || "/dashboard"
-    // 303 See Other: converte POST → GET, garantindo que o cookie seja enviado no GET para /dashboard
-    const response = NextResponse.redirect(new URL(redirectTo, request.url), { status: 303 })
-    response.cookies.set(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/",
-    })
-    return response
+    // Redireciona para o endpoint de set-session que seta o cookie via GET e redireciona para o destino.
+    // Desta forma o cookie é setado na resposta do GET /api/auth/session e o browser
+    // já o envia no próximo GET /dashboard — sem depender do Set-Cookie do redirect.
+    const sessionUrl = new URL("/api/auth/session", request.url)
+    sessionUrl.searchParams.set("token", token)
+    sessionUrl.searchParams.set("next", redirectTo)
+    return NextResponse.redirect(sessionUrl, { status: 303 })
   } catch (err) {
     console.error("[auth/login]", err)
     return errorRedirect(request, "Erro interno. Tente novamente.")
