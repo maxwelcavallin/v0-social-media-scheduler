@@ -1,50 +1,16 @@
-"use client"
-
-import { useState } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { signInEmail } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Eye, EyeOff } from "lucide-react"
 import Image from "next/image"
 
-const schema = z.object({
-  email: z.string().email("E-mail inválido"),
-  password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
-})
+interface Props {
+  searchParams: Promise<{ error?: string }>
+}
 
-type FormData = z.infer<typeof schema>
-
-export default function LoginPage() {
-  const router = useRouter()
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  })
-
-  const onSubmit = async (data: FormData) => {
-    setLoading(true)
-    setError(null)
-    const result = await signInEmail(data.email, data.password)
-    if (result.error) {
-      setError(result.error.message)
-      setLoading(false)
-    } else {
-      // Hard redirect garante que o cookie seja enviado no próximo request
-      // e o proxy lê corretamente, evitando o loop infinito no preview
-      window.location.href = "/dashboard"
-    }
-  }
+export default async function LoginPage({ searchParams }: Props) {
+  const { error } = await searchParams
 
   return (
     <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4 font-sans">
@@ -60,42 +26,27 @@ export default function LoginPage() {
             <CardDescription>Entre com sua conta para continuar</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+            {/* Form nativo — o browser segue o redirect 302 da API, 
+                garantindo que o Set-Cookie seja aceito em qualquer contexto */}
+            <form action="/api/auth/login" method="POST" className="flex flex-col gap-4">
               {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
+                <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
+                  {decodeURIComponent(error)}
+                </div>
               )}
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="email">E-mail</Label>
-                <Input id="email" type="email" placeholder="voce@empresa.com" {...register("email")} />
-                {errors.email && <span className="text-xs text-destructive">{errors.email.message}</span>}
+                <Input id="email" name="email" type="email" placeholder="voce@empresa.com" required />
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="password">Senha</Label>
-                <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? "text" : "password"} 
-                    placeholder="••••••••" 
-                    {...register("password")} 
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.password && <span className="text-xs text-destructive">{errors.password.message}</span>}
+                <Input id="password" name="password" type="password" placeholder="••••••••" required />
               </div>
 
-              <Button type="submit" className="w-full mt-2" disabled={loading}>
-                {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Entrando...</> : "Entrar"}
+              <Button type="submit" className="w-full mt-2">
+                Entrar
               </Button>
             </form>
 
