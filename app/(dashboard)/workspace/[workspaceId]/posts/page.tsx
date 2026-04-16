@@ -124,6 +124,8 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {posts.map((post: any) => {
+            const postType = (post.post_types || [])[0] || "feed"
+            const status = statusMap[post.status] || { label: post.status, variant: "outline" as const }
             return (
               <Card key={post.id} className="overflow-hidden hover:border-primary/30 transition-all group">
                 {/* Thumbnail */}
