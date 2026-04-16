@@ -60,9 +60,29 @@ export async function POST(req: Request) {
   console.log("[v0] test-publish: account =", account_username)
   console.log("[v0] test-publish: imageUrl =", imageUrl)
 
-  const apiResponses: { step: string; url: string; status: number; body: unknown }[] = []
+  const apiResponses: { step: string; url?: string; status: number; body: unknown }[] = []
 
   try {
+    // ── Passo 0: Verificar scopes do token ────────────────────────────────
+    const scopeUrl = `${GRAPH_IG}/me/permissions?access_token=${access_token}`
+    const scopeRes = await fetch(scopeUrl)
+    const scopeData = await scopeRes.json()
+    const grantedScopes: string[] = (scopeData.data || [])
+      .filter((p: any) => p.status === "granted")
+      .map((p: any) => p.permission)
+    apiResponses.push({ step: "Verificar scopes do token", url: scopeUrl, status: scopeRes.status, body: { granted: grantedScopes } })
+
+    const hasPublishScope = grantedScopes.includes("instagram_business_content_publish")
+    if (!hasPublishScope) {
+      return NextResponse.json({
+        success: false,
+        error: `O token não possui o scope 'instagram_business_content_publish'.\nScopes atuais: [${grantedScopes.join(", ")}]\n\nAção necessária: desconecte e reconecte a conta Instagram para gerar um novo token com esse scope.`,
+        action_required: "reconnect",
+        granted_scopes: grantedScopes,
+        api_responses: apiResponses,
+      }, { status: 200 })
+    }
+
     // ── Passo 1: Criar container de mídia ──────────────────────────────────
     const containerUrl = `${GRAPH_IG}/me/media`
     const containerBody = {

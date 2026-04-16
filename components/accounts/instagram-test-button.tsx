@@ -14,10 +14,12 @@ import { FlaskConical, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp } 
 interface TestResult {
   success: boolean
   error?: string
+  action_required?: "reconnect"
+  granted_scopes?: string[]
   account_username?: string
   container_id?: string
   media_id?: string
-  api_responses?: { step: string; url: string; status: number; body: unknown }[]
+  api_responses?: { step: string; url?: string; status: number; body: unknown }[]
 }
 
 interface Props {
@@ -95,18 +97,41 @@ export function InstagramTestButton({ accountId, accountUsername }: Props) {
                 <div className={`flex items-start gap-3 rounded-lg border p-4 ${
                   result.success
                     ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800"
-                    : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                    : result.action_required === "reconnect"
+                      ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+                      : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
                 }`}>
                   {result.success
                     ? <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                    : <XCircle className="w-5 h-5 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
+                    : <XCircle className={`w-5 h-5 shrink-0 mt-0.5 ${result.action_required === "reconnect" ? "text-amber-500" : "text-red-500 dark:text-red-400"}`} />
                   }
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-semibold ${result.success ? "text-emerald-800 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}>
-                      {result.success ? "Publicação realizada com sucesso" : "Falha na publicação"}
+                    <p className={`text-sm font-semibold ${
+                      result.success
+                        ? "text-emerald-800 dark:text-emerald-300"
+                        : result.action_required === "reconnect"
+                          ? "text-amber-800 dark:text-amber-300"
+                          : "text-red-700 dark:text-red-300"
+                    }`}>
+                      {result.success
+                        ? "Publicação realizada com sucesso"
+                        : result.action_required === "reconnect"
+                          ? "Reconexão necessária — token sem permissão de publicação"
+                          : "Falha na publicação"}
                     </p>
                     {result.error && (
-                      <p className="text-xs text-red-600 dark:text-red-400 mt-1 leading-relaxed">{result.error}</p>
+                      <p className={`text-xs mt-1 leading-relaxed whitespace-pre-wrap ${
+                        result.action_required === "reconnect"
+                          ? "text-amber-700 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400"
+                      }`}>
+                        {result.error}
+                      </p>
+                    )}
+                    {result.action_required === "reconnect" && (
+                      <p className="text-xs mt-2 font-medium text-amber-900 dark:text-amber-200">
+                        Clique em "Desconectar" nesta conta e reconecte-a para gerar um token atualizado com o scope de publicação.
+                      </p>
                     )}
                   </div>
                 </div>
