@@ -186,6 +186,8 @@ export function WorkspacePostsClient({
               : selectedPost.status
           }
           statusMap={statusMap}
+          accounts={accounts}
+          workspaceId={workspaceId}
         />
       )}
     </>

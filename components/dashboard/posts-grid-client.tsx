@@ -120,6 +120,7 @@ export function PostsGridClient({
               : selectedPost.status
           }
           statusMap={statusMap}
+          workspaceId={selectedPost.workspace_id}
         />
       )}
     </>
