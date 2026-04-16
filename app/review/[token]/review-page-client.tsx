@@ -10,6 +10,27 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
+// ── Hook de swipe touch ───────────────────────────────────────────────────────
+function useSwipe(onSwipeLeft: () => void, onSwipeRight: () => void) {
+  const touchStartX = useRef<number | null>(null)
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+  }, [])
+
+  const onTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null) return
+    const diff = touchStartX.current - e.changedTouches[0].clientX
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) onSwipeLeft()
+      else onSwipeRight()
+    }
+    touchStartX.current = null
+  }, [onSwipeLeft, onSwipeRight])
+
+  return { onTouchStart, onTouchEnd }
+}
+
 // ── Fullscreen viewer ─────────────────────────────────────────────────────────
 function FullscreenViewer({ media, initialIdx, onClose }: {
   media: PostMedia[]
@@ -19,6 +40,10 @@ function FullscreenViewer({ media, initialIdx, onClose }: {
   const [idx, setIdx] = useState(initialIdx)
   const [muted, setMuted] = useState(false)
   const current = media[idx]
+
+  const prev = useCallback(() => setIdx(i => Math.max(0, i - 1)), [])
+  const next = useCallback(() => setIdx(i => Math.min(media.length - 1, i + 1)), [media.length])
+  const { onTouchStart, onTouchEnd } = useSwipe(next, prev)
 
   // Fecha com ESC
   useEffect(() => {
@@ -41,6 +66,8 @@ function FullscreenViewer({ media, initialIdx, onClose }: {
     <div
       className="fixed inset-0 z-50 bg-black flex items-center justify-center"
       onClick={onClose}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
     >
       {/* Fecha */}
       <button
@@ -85,14 +112,14 @@ function FullscreenViewer({ media, initialIdx, onClose }: {
       {media.length > 1 && (
         <>
           <button
-            onClick={e => { e.stopPropagation(); setIdx(i => Math.max(0, i - 1)) }}
+            onClick={e => { e.stopPropagation(); prev() }}
             disabled={idx === 0}
             className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-20 hover:bg-white/20 transition-colors"
           >
             <ChevronLeft className="w-6 h-6 text-white" />
           </button>
           <button
-            onClick={e => { e.stopPropagation(); setIdx(i => Math.min(media.length - 1, i + 1)) }}
+            onClick={e => { e.stopPropagation(); next() }}
             disabled={idx === media.length - 1}
             className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center disabled:opacity-20 hover:bg-white/20 transition-colors"
           >
@@ -151,6 +178,10 @@ function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedi
   const maxCaption = 100
   const longCaption = post.content && post.content.length > maxCaption
 
+  const prevSlide = useCallback(() => setIdx(i => Math.max(0, i - 1)), [])
+  const nextSlide = useCallback(() => setIdx(i => Math.min(media.length - 1, i + 1)), [media.length])
+  const { onTouchStart, onTouchEnd } = useSwipe(nextSlide, prevSlide)
+
   return (
     <div className="bg-white border border-[#DBDBDB] rounded-lg sm:rounded-sm overflow-hidden w-full group">
       {/* Header */}
@@ -172,7 +203,13 @@ function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedi
       </div>
 
       {/* Media */}
-      <div className="relative bg-black cursor-pointer" style={{ aspectRatio: "1/1" }} onClick={() => current && onExpand(idx)}>
+      <div
+        className="relative bg-black cursor-pointer"
+        style={{ aspectRatio: "1/1" }}
+        onClick={() => current && onExpand(idx)}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         {current ? (
           current.media_type === "video" ? (
             <div className="relative w-full h-full">
@@ -194,11 +231,11 @@ function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedi
         )}
         {media.length > 1 && (
           <>
-            <button onClick={() => setIdx(i => Math.max(0, i - 1))} disabled={idx === 0}
+            <button onClick={e => { e.stopPropagation(); prevSlide() }} disabled={idx === 0}
               className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center disabled:opacity-0 transition-opacity">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <button onClick={() => setIdx(i => Math.min(media.length - 1, i + 1))} disabled={idx === media.length - 1}
+            <button onClick={e => { e.stopPropagation(); nextSlide() }} disabled={idx === media.length - 1}
               className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center disabled:opacity-0 transition-opacity">
               <ChevronRight className="w-5 h-5" />
             </button>
