@@ -2,11 +2,11 @@ import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { redirect } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { ImageIcon, Instagram, Facebook, Film, LayoutGrid, MessageSquare } from "lucide-react"
+import { Instagram, Facebook, Film, LayoutGrid } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { StatusFilter } from "@/components/posts/status-filter"
 import { DashboardPostsFilters } from "@/components/dashboard/dashboard-posts-filters"
+import { PostsGridClient } from "@/components/dashboard/posts-grid-client"
 
 const platformIcons: Record<string, React.ReactNode> = {
   instagram: <Instagram className="w-3.5 h-3.5" style={{ color: "oklch(0.52 0.25 15)" }} />,
@@ -133,85 +133,13 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
           description="Tente ajustar os filtros ou acesse um workspace para criar posts."
         />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {posts.map((post: any) => {
-            const displayStatus = post.review_status && reviewStatuses.includes(post.review_status)
-              ? post.review_status
-              : post.status
-            const status  = statusMap[displayStatus] || { label: displayStatus, variant: "outline" as const }
-            const postType = (post.post_types || [])[0] || "feed"
-
-            return (
-              <Card key={post.id} className="overflow-hidden hover:border-primary/30 transition-all group">
-                <div className="aspect-square bg-muted relative overflow-hidden">
-                  {post.thumbnail ? (
-                    <img
-                      src={post.thumbnail}
-                      alt=""
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <ImageIcon className="w-10 h-10 text-muted-foreground/30" />
-                    </div>
-                  )}
-
-                  <div className="absolute top-2 left-2 flex gap-1">
-                    {(post.platforms || []).map((p: string) => (
-                      <div key={p} className="w-6 h-6 rounded-full bg-card/90 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                        {platformIcons[p]}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="absolute top-2 right-2">
-                    <div className="flex items-center gap-1 bg-card/90 backdrop-blur-sm px-2 py-0.5 rounded-full shadow-sm text-xs text-muted-foreground">
-                      {postTypeIcons[postType]}
-                      <span className="capitalize">{postType}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <CardContent className="p-3">
-                  <p className="text-xs text-primary font-medium mb-1 truncate">{post.workspace_name}</p>
-                  {(() => {
-                    const accs  = Array.isArray(post.accounts) ? post.accounts : []
-                    const names = accs.map((a: any) => a.username ? `@${a.username}` : a.name).filter(Boolean)
-                    return names.length > 0 ? (
-                      <p className="text-xs text-muted-foreground mb-1 truncate">{names.join(", ")}</p>
-                    ) : null
-                  })()}
-                  <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed whitespace-pre-wrap">
-                    {postType === "story" ? "Story" : (post.content || "Sem legenda")}
-                  </p>
-                  {displayStatus === "needs_changes" && post.review_notes && (
-                    <div className="flex gap-1.5 items-start bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5 mb-2">
-                      <MessageSquare className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed whitespace-pre-wrap">
-                        {post.review_notes}
-                      </p>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      {(() => {
-                        const s = String(post.scheduled_at || post.created_at)
-                        const d = new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
-                        return new Intl.DateTimeFormat("pt-BR", {
-                          timeZone: "America/Sao_Paulo",
-                          day: "2-digit", month: "short",
-                          hour: "2-digit", minute: "2-digit",
-                        }).format(d)
-                      })()}
-                    </span>
-                    <Badge variant={status.variant} className={`text-xs ${status.className ?? ""}`}>
-                      {status.label}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+        <PostsGridClient
+          posts={posts}
+          platformIcons={platformIcons}
+          postTypeIcons={postTypeIcons}
+          statusMap={statusMap}
+          reviewStatuses={reviewStatuses}
+        />
       )}
     </div>
   )

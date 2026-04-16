@@ -1,16 +1,13 @@
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { redirect, notFound } from "next/navigation"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid, MessageSquare } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
-import { PostActions } from "@/components/posts/post-actions"
-import { VideoThumbnail } from "@/components/posts/video-thumbnail"
 import { StatusFilter } from "@/components/posts/status-filter"
+import { WorkspacePostsClient } from "./workspace-posts-client"
+import { Button } from "@/components/ui/button"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -29,89 +26,77 @@ const postTypeIcons: Record<string, React.ReactNode> = {
   story: <ImageIcon className="w-3 h-3" />,
 }
 
-const reviewStatuses = ["in_review", "approved", "needs_changes"]
-
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; className?: string }> = {
   draft: { label: "Rascunho", variant: "outline" },
-  scheduled: { label: "Agendado", variant: "secondary" },
+  scheduled: { label: "Agendado", variant: "secondary", className: "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800" },
+  publishing: { label: "Publicando", variant: "secondary", className: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800" },
   published: { label: "Publicado", variant: "default" },
   failed: { label: "Falhou", variant: "destructive" },
-  in_review: { label: "Em revisão", variant: "outline", className: "border-blue-400 text-blue-600 dark:text-blue-400" },
-  approved: { label: "Aprovado", variant: "outline", className: "border-green-500 text-green-600 dark:text-green-400" },
-  needs_changes: { label: "Ajustar", variant: "outline", className: "border-amber-500 text-amber-600 dark:text-amber-400" },
+  in_review: { label: "Em revisão", variant: "secondary", className: "bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-800" },
+  approved: { label: "Aprovado", variant: "secondary", className: "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800" },
+  needs_changes: { label: "Ajustar", variant: "secondary", className: "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800" },
 }
 
+const reviewStatuses = ["in_review", "approved", "needs_changes"]
+
 export default async function WorkspacePostsPage({ params, searchParams }: Props) {
+  const session = await getSession()
+  if (!session?.user?.id) redirect("/login")
+
   const { workspaceId } = await params
   const { status: statusFilter } = await searchParams
-  const session = await getSession()
-  if (!session) redirect("/login")
 
-  const postStatuses = ["draft", "scheduled", "published", "failed"]
-  const validStatuses = [...postStatuses, ...reviewStatuses]
+  // Verifica acesso ao workspace
+  const workspaceAccess = await sql`
+    SELECT o.id FROM "organization" o
+    JOIN "member" m ON o.id = m.organization_id
+    WHERE o.id = ${workspaceId} AND m.user_id = ${session.user.id}
+    LIMIT 1
+  `
+  if (workspaceAccess.length === 0) notFound()
+
+  // Busca workspace
+  const [workspace] = await sql`SELECT name FROM "organization" WHERE id = ${workspaceId} LIMIT 1`
+
+  // Contas da workspace
+  const accounts = await sql`
+    SELECT id, account_name, account_username FROM social_accounts
+    WHERE organization_id = ${workspaceId}
+    ORDER BY account_name ASC
+  `
+
+  // Posts com filtro de status
+  const validStatuses = ["draft", "scheduled", "publishing", "published", "failed", "in_review", "approved", "needs_changes"]
   const filterStatus = statusFilter && validStatuses.includes(statusFilter) ? statusFilter : null
-  // review_status é uma coluna separada — filtros de revisão usam review_status, não posts.status
   const isReviewFilter = filterStatus ? reviewStatuses.includes(filterStatus) : false
 
-  const [workspace, accounts, posts] = await Promise.all([
-    sql`
-      SELECT o.id, o.name FROM "organization" o
-      JOIN "member" m ON o.id = m.organization_id
-      WHERE o.id = ${workspaceId} AND m.user_id = ${session.user.id}
-      LIMIT 1
-    `,
-    sql`
-      SELECT id, platform, account_name, account_username, profile_picture_url
-      FROM social_accounts WHERE workspace_id = ${workspaceId} AND is_active = true
-    `,
-    sql`
-      SELECT p.id, p.content, p.status, p.scheduled_at, p.published_at, p.created_at, p.error_message,
-        p.review_notes, p.review_status, p.review_at,
-        ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
-        ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
-        ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) as account_ids,
-        COUNT(DISTINCT pm.id) FILTER (WHERE pm.media_type != 'cover')::int as media_count,
-        COALESCE(
-          (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id AND pm2.media_type = 'cover' LIMIT 1),
-          (SELECT pm3.url FROM post_media pm3 WHERE pm3.post_id = p.id AND pm3.media_type != 'cover' ORDER BY pm3.order_index ASC LIMIT 1)
-        ) as thumbnail,
-        (SELECT pm4.media_type FROM post_media pm4 WHERE pm4.post_id = p.id AND pm4.media_type != 'cover' ORDER BY pm4.order_index ASC LIMIT 1) as primary_media_type,
-        (SELECT pm5.url FROM post_media pm5 WHERE pm5.post_id = p.id AND pm5.media_type != 'cover' ORDER BY pm5.order_index ASC LIMIT 1) as primary_media_url,
-        COALESCE(
-          JSON_AGG(JSON_BUILD_OBJECT('url', pm.url, 'media_type', pm.media_type) ORDER BY pm.order_index ASC) FILTER (WHERE pm.id IS NOT NULL AND pm.media_type != 'cover'),
-          '[]'::json
-        ) as media
-      FROM posts p
-      LEFT JOIN post_targets pt ON pt.post_id = p.id
-      LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
-      LEFT JOIN post_media pm ON pm.post_id = p.id
-      WHERE p.workspace_id = ${workspaceId}
-        AND (
-          ${filterStatus}::text IS NULL
-          OR (${isReviewFilter} = false AND p.status = ${filterStatus})
-          OR (${isReviewFilter} = true  AND p.review_status = ${filterStatus})
-        )
-      GROUP BY p.id
-      ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
-    `,
-  ])
-
-  if (workspace.length === 0) notFound()
-  const ws = workspace[0]
+  const posts = await sql`
+    SELECT
+      p.id, p.content, p.status, p.review_status, p.review_notes, p.scheduled_at, p.created_at,
+      p.published_at, p.error_message, p.post_types, p.thumbnail, p.primary_media_type, p.primary_media_url,
+      COALESCE(COUNT(DISTINCT pm.id), 0) AS media_count,
+      COALESCE(json_agg(DISTINCT jsonb_build_object('id', sa.id, 'account_name', sa.account_name, 'account_username', sa.account_username)) FILTER (WHERE sa.id IS NOT NULL), '[]') AS accounts,
+      ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.platform IS NOT NULL) AS platforms,
+      ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) AS account_ids,
+      COALESCE(json_agg(DISTINCT jsonb_build_object('url', pm.url, 'media_type', pm.media_type, 'order_index', pm.order_index)) FILTER (WHERE pm.id IS NOT NULL), '[]') AS media
+    FROM posts p
+    LEFT JOIN post_media pm ON pm.post_id = p.id
+    LEFT JOIN post_targets pt ON pt.post_id = p.id
+    LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
+    WHERE p.workspace_id = ${workspaceId}
+      AND (
+        ${filterStatus}::text IS NULL
+        OR (${isReviewFilter} = false AND p.status = ${filterStatus})
+        OR (${isReviewFilter} = true AND p.review_status = ${filterStatus})
+      )
+    GROUP BY p.id
+    ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
+  `
 
   return (
-    <div className="flex flex-col gap-6 max-w-5xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Posts</h1>
-          <p className="text-muted-foreground text-sm mt-1">{ws.name}</p>
-        </div>
-        <CreatePostDialog workspaceId={workspaceId} accounts={accounts}>
-          <Button size="sm" className="gap-2">
-            <Plus className="w-4 h-4" />
-            Novo Post
-          </Button>
-        </CreatePostDialog>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">{workspace.name} — Posts</h1>
       </div>
 
       <StatusFilter current={filterStatus} />
@@ -131,132 +116,15 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
           }
         />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {posts.map((post: any) => {
-            const postType = (post.post_types || [])[0] || "feed"
-            // review_status tem prioridade sobre posts.status para exibição
-            const displayStatus = post.review_status && reviewStatuses.includes(post.review_status)
-              ? post.review_status
-              : post.status
-            const status = statusMap[displayStatus] || { label: displayStatus, variant: "outline" as const }
-            return (
-              <Card key={post.id} className="overflow-hidden hover:border-primary/30 transition-all group">
-                {/* Thumbnail */}
-                <div className="aspect-square bg-muted relative overflow-hidden">
-
-                  {post.thumbnail ? (
-                    // If thumbnail is a cover image or a regular image, show it directly.
-                    // If the primary media is a video and there's no cover, VideoThumbnail captures a frame.
-                    post.primary_media_type === "video" && post.thumbnail === post.primary_media_url ? (
-                      <VideoThumbnail
-                        videoUrl={post.thumbnail}
-                        className="group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <img
-                        src={post.thumbnail}
-                        alt=""
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    )
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <ImageIcon className="w-10 h-10 text-muted-foreground/30" />
-                    </div>
-                  )}
-
-                  {/* Overlay badges */}
-                  <div className="absolute top-2 left-2 flex gap-1">
-                    {(post.platforms || []).map((p: string) => (
-                      <div key={p} className="w-6 h-6 rounded-full bg-card/90 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                        {platformIcons[p]}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="absolute top-2 right-2">
-                    <div className="flex items-center gap-1 bg-card/90 backdrop-blur-sm px-2 py-0.5 rounded-full shadow-sm text-xs text-muted-foreground">
-                      {postTypeIcons[postType]}
-                      <span className="capitalize">{postType}</span>
-                    </div>
-                  </div>
-                  {post.media_count > 1 && (
-                    <div className="absolute bottom-2 right-2">
-                      <Badge variant="secondary" className="text-xs shadow-sm">
-                        1/{post.media_count}
-                      </Badge>
-                    </div>
-                  )}
-                </div>
-
-                <CardContent className="p-3">
-                  {(() => {
-                    const ids: string[] = post.account_ids || []
-                    const matched = accounts.filter((a: any) => ids.includes(a.id))
-                    const names = matched.map((a: any) => a.account_username ? `@${a.account_username}` : a.account_name).filter(Boolean)
-                    return names.length > 0 ? (
-                      <p className="text-xs text-muted-foreground font-medium mb-1 truncate">{names.join(", ")}</p>
-                    ) : null
-                  })()}
-                  <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed whitespace-pre-wrap">
-                    {postType === "story" ? "Story" : (post.content || "Sem legenda")}
-                  </p>
-                  {post.status === "failed" && post.error_message && (
-                    <p className="text-xs text-destructive bg-destructive/5 rounded px-2 py-1 mb-2 line-clamp-2 leading-relaxed">
-                      {post.error_message}
-                    </p>
-                  )}
-                  {post.review_status === "needs_changes" && post.review_notes && (
-                    <div className="flex gap-1.5 items-start bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5 mb-2">
-                      <MessageSquare className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed whitespace-pre-wrap">
-                        {post.review_notes}
-                      </p>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">
-                      {(() => {
-                        // Neon may return Date objects or strings — normalize to Date safely
-                        const toUtcDate = (v: unknown): Date => {
-                          if (v instanceof Date) return v
-                          const s = String(v)
-                          return new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z")
-                        }
-                        const fmt = (d: Date) => new Intl.DateTimeFormat("pt-BR", {
-                          timeZone: "America/Sao_Paulo",
-                          day: "2-digit", month: "short",
-                          hour: "2-digit", minute: "2-digit",
-                        }).format(d)
-                        const dateToShow = post.published_at || post.scheduled_at
-                        const label = post.status === "published" ? "Publicado " : post.scheduled_at ? "Agendado " : ""
-                        if (dateToShow) return label + fmt(toUtcDate(dateToShow))
-                        return fmt(toUtcDate(post.created_at))
-                      })()}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Badge variant={status.variant} className={cn("text-xs", status.className)}>
-                        {status.label}
-                      </Badge>
-                      <PostActions
-                        workspaceId={workspaceId}
-                        accounts={accounts}
-                        post={{
-                          id: post.id,
-                          content: post.content,
-                          status: post.status,
-                          scheduled_at: post.scheduled_at,
-                          post_type: (post.post_types || [])[0] || "feed",
-                          accountIds: post.account_ids || [],
-                          media: post.media || [],
-                        }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+        <WorkspacePostsClient
+          posts={posts}
+          accounts={accounts}
+          workspaceId={workspaceId}
+          platformIcons={platformIcons}
+          postTypeIcons={postTypeIcons}
+          statusMap={statusMap}
+          reviewStatuses={reviewStatuses}
+        />
       )}
     </div>
   )
