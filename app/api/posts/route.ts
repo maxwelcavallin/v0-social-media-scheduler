@@ -55,8 +55,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const post = await sql`
-      INSERT INTO posts (id, workspace_id, content, status, scheduled_at, created_by, created_at, updated_at)
-      VALUES (gen_random_uuid(), ${workspaceId}, ${content}, ${postStatus}, ${finalScheduledAt}, ${session.user.id}, NOW(), NOW())
+      INSERT INTO posts (id, workspace_id, content, status, post_type, scheduled_at, created_by, created_at, updated_at)
+      VALUES (gen_random_uuid(), ${workspaceId}, ${content}, ${postStatus}, ${postType || "feed"}, ${finalScheduledAt}, ${session.user.id}, NOW(), NOW())
       RETURNING id
     `
     const postId = post[0].id
@@ -218,7 +218,7 @@ export async function GET(request: NextRequest) {
     SELECT p.id, p.content, p.status, p.scheduled_at, p.created_at,
       o.id as workspace_id, o.name as workspace_name,
       ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
-      ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
+      COALESCE(ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL), ARRAY[p.post_type]) as post_types,
       COUNT(DISTINCT pm.id)::int as media_count
     FROM posts p
     JOIN "organization" o ON o.id = p.workspace_id

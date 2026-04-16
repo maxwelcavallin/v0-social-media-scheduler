@@ -73,6 +73,7 @@ export async function PATCH(
     SET content = ${content || ""},
         scheduled_at = ${finalScheduledAt},
         status = ${newStatus},
+        post_type = ${postType || "feed"},
         updated_at = NOW()
     WHERE id = ${postId}
   `

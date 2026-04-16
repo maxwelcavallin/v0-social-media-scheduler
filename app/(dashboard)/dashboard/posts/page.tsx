@@ -74,7 +74,7 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
         o.id   AS workspace_id,
         o.name AS workspace_name,
         ARRAY_AGG(DISTINCT sa.platform)   FILTER (WHERE sa.id IS NOT NULL) AS platforms,
-        ARRAY_AGG(DISTINCT pt.post_type)  FILTER (WHERE pt.id IS NOT NULL) AS post_types,
+        COALESCE(ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL), ARRAY[p.post_type]) AS post_types,
         COUNT(DISTINCT pm.id)::int AS media_count,
         (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) AS thumbnail,
         COALESCE(

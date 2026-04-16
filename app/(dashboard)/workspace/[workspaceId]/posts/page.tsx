@@ -74,7 +74,7 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
     SELECT
       p.id, p.content, p.status, p.review_status, p.review_notes, p.scheduled_at, p.created_at,
       p.published_at, p.error_message,
-      ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL) AS post_types,
+      COALESCE(ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL), ARRAY[p.post_type]) AS post_types,
       COALESCE(COUNT(DISTINCT pm.id), 0) AS media_count,
       (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) AS thumbnail,
       (SELECT pm2.media_type FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) AS primary_media_type,
