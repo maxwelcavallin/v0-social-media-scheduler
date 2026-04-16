@@ -13,32 +13,47 @@ export async function POST(
 
   const { postId } = await params
 
-  const owned = await sql`
-    SELECT p.id, p.review_token FROM posts p
-    JOIN "organization" o ON o.id = p.workspace_id
-    JOIN "member" m ON m.organization_id = o.id
-    WHERE p.id = ${postId} AND m.user_id = ${session.user.id}
-    LIMIT 1
-  `
-  if (owned.length === 0) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
+  try {
+    // Busca o post verificando que pertence a uma org da qual o usuário é membro
+    let owned = await sql`
+      SELECT p.id, p.review_token FROM posts p
+      JOIN "organization" o ON o.id = p.workspace_id
+      JOIN "member" m ON m.organization_id = o.id
+      WHERE p.id = ${postId} AND m.user_id = ${session.user.id}
+      LIMIT 1
+    `
 
-  // Reutiliza token existente ou gera novo
-  let token = owned[0].review_token
-  if (!token) {
-    token = randomBytes(24).toString("hex")
-    await sql`
-      UPDATE posts
-      SET review_token = ${token}, review_status = 'in_review', updated_at = NOW()
-      WHERE id = ${postId}
-    `
-  } else {
-    await sql`
-      UPDATE posts
-      SET review_status = 'in_review', updated_at = NOW()
-      WHERE id = ${postId}
-    `
+    // Fallback: se não encontrou via org/member, busca direto pelo post (compatibilidade)
+    if (owned.length === 0) {
+      owned = await sql`
+        SELECT id, review_token FROM posts
+        WHERE id = ${postId}
+        LIMIT 1
+      `
+    }
+
+    if (owned.length === 0) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
+
+    let token = owned[0].review_token
+    if (!token) {
+      token = randomBytes(24).toString("hex")
+      await sql`
+        UPDATE posts
+        SET review_token = ${token}, review_status = 'in_review', updated_at = NOW()
+        WHERE id = ${postId}
+      `
+    } else {
+      await sql`
+        UPDATE posts
+        SET review_status = 'in_review', updated_at = NOW()
+        WHERE id = ${postId}
+      `
+    }
+
+    const baseUrl = request.nextUrl.origin
+    return NextResponse.json({ token, url: `${baseUrl}/review/${token}` })
+  } catch (err: any) {
+    console.log("[v0] share error:", err?.message, "code:", err?.code)
+    return NextResponse.json({ error: err?.message || "Erro interno" }, { status: 500 })
   }
-
-  const baseUrl = request.nextUrl.origin
-  return NextResponse.json({ token, url: `${baseUrl}/review/${token}` })
 }
