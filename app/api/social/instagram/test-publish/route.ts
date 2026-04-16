@@ -45,8 +45,6 @@ export async function POST(req: Request) {
 
   const account = accountRows[0]
   const { access_token, platform_user_id, account_username } = account
-  console.log("[v0] test-publish: account =", account_username, "| platform_user_id =", platform_user_id)
-  console.log("[v0] test-publish: imageUrl =", imageUrl)
 
   // Usa URL pública confiável para que o Instagram consiga baixar a imagem.
   // A URL local do preview não é acessível externamente pela Graph API.
@@ -58,6 +56,9 @@ export async function POST(req: Request) {
     : null
   // Imagem quadrada 1:1 de 1080px via picsum.photos — sempre acessível pelo Instagram
   const imageUrl = customUrl || vercelUrl || "https://picsum.photos/id/237/1080/1080"
+
+  console.log("[v0] test-publish: account =", account_username, "| platform_user_id =", platform_user_id)
+  console.log("[v0] test-publish: imageUrl =", imageUrl)
 
   const apiResponses: { step: string; url: string; status: number; body: unknown }[] = []
 
