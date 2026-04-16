@@ -7,7 +7,7 @@ import {
   Volume2, VolumeX, Play, Music2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-<br>import { Textarea } from "@/components/ui/textarea"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 interface PostMedia {
