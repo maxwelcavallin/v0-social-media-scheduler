@@ -4,6 +4,7 @@ import { redirect, notFound } from "next/navigation"
 import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-button"
 import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
+import { InstagramTestButton } from "@/components/accounts/instagram-test-button"
 import { AccountAvatar } from "@/components/accounts/account-avatar"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -33,7 +34,7 @@ export default async function AccountsPage({ params }: Props) {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const [workspace, accounts] = await Promise.all([
+  const [workspace, accounts, roleRows] = await Promise.all([
     sql`
       SELECT o.id, o.name
       FROM "organization" o
@@ -43,16 +44,24 @@ export default async function AccountsPage({ params }: Props) {
     `,
     sql`
       SELECT id, platform, account_name, account_username, profile_picture_url,
-             is_active, last_sync_at, created_at, token_expires_at
+             is_active, last_sync_at, created_at, token_expires_at, page_id
       FROM social_accounts
       WHERE workspace_id = ${workspaceId}
       ORDER BY platform, created_at ASC
+    `,
+    sql`
+      SELECT cm.role
+      FROM company_member cm
+      JOIN company c ON c.id = cm.company_id
+      WHERE cm.user_id = ${session.user.id}
+      LIMIT 1
     `,
   ])
 
   if (workspace.length === 0) notFound()
 
   const ws = workspace[0]
+  const isAdmin = roleRows[0]?.role === "admin"
   const instagramAccounts = accounts.filter((a: any) => a.platform === "instagram")
   const facebookAccounts = accounts.filter((a: any) => a.platform === "facebook")
 
@@ -98,7 +107,7 @@ export default async function AccountsPage({ params }: Props) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {instagramAccounts.map((acc: any) => (
-                  <InstagramAccountCard key={acc.id} account={acc} />
+                  <InstagramAccountCard key={acc.id} account={acc} isAdmin={isAdmin} />
                 ))}
               </div>
             </div>
@@ -125,7 +134,7 @@ export default async function AccountsPage({ params }: Props) {
   )
 }
 
-function InstagramAccountCard({ account }: { account: any }) {
+function InstagramAccountCard({ account, isAdmin }: { account: any; isAdmin: boolean }) {
   const token = getTokenStatus(account.token_expires_at)
 
   const borderColor =
@@ -185,8 +194,14 @@ function InstagramAccountCard({ account }: { account: any }) {
           </div>
 
           {/* Actions */}
-          <div className="shrink-0">
+          <div className="shrink-0 flex flex-col items-end gap-1.5">
             <DisconnectAccountButton accountId={account.id} />
+            {isAdmin && !account.page_id && (
+              <InstagramTestButton
+                accountId={account.id}
+                accountUsername={account.account_username}
+              />
+            )}
           </div>
         </div>
 
