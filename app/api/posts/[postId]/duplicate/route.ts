@@ -15,9 +15,9 @@ export async function POST(
   const [post] = await sql`
     SELECT p.id, p.content, p.workspace_id
     FROM posts p
-    JOIN "organization" o ON o.id = p.workspace_id
-    JOIN "member" m ON m.organization_id = o.id
-    WHERE p.id = ${postId} AND m.user_id = ${session.user.id}
+    JOIN workspaces w ON w.id = p.workspace_id
+    JOIN workspace_members wm ON wm.workspace_id = w.id
+    WHERE p.id = ${postId} AND wm.user_id = ${session.user.id}
     LIMIT 1
   `
   if (!post) return NextResponse.json({ error: "Post não encontrado" }, { status: 404 })
