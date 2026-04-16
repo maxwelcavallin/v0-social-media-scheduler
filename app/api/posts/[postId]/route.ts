@@ -100,16 +100,28 @@ export async function PATCH(
     }
   }
 
-  // Update targets if accountIds provided
+  // Update targets: se accountIds foi enviado, recriar; caso contrário, só atualizar post_type
   if (accountIds && accountIds.length > 0) {
     await sql`DELETE FROM post_targets WHERE post_id = ${postId}`
     await sql`DELETE FROM post_queue WHERE post_id = ${postId}`
     for (const accountId of accountIds) {
       await sql`
-        INSERT INTO post_targets (post_id, social_account_id, post_type, status)
-        VALUES (${postId}, ${accountId}, ${postType || "feed"}, 'pending')
+        INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
+        VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType || "feed"}, 'pending', NOW())
       `
     }
+    if (finalScheduledAt && newStatus === "scheduled") {
+      await sql`
+        INSERT INTO post_queue (post_id, scheduled_at, status, attempts, max_attempts)
+        VALUES (${postId}, ${finalScheduledAt}, 'pending', 0, 3)
+      `
+    }
+  } else if (postType) {
+    // Sem novos accountIds — apenas sincroniza o post_type nos targets existentes
+    await sql`
+      UPDATE post_targets SET post_type = ${postType} WHERE post_id = ${postId}
+    `
+  }
     if (finalScheduledAt) {
       await sql`
         INSERT INTO post_queue (post_id, scheduled_at, status, attempts, max_attempts)

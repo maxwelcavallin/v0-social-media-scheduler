@@ -85,8 +85,16 @@ export async function POST(request: NextRequest) {
       `
     }
 
-    // Drafts have no targets and are never published — return early
+    // Drafts: create post_targets if accounts were selected, then return early
     if (isDraft) {
+      if (accountIds && accountIds.length > 0) {
+        for (const accountId of accountIds) {
+          await sql`
+            INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
+            VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType || "feed"}, 'pending', NOW())
+          `
+        }
+      }
       return NextResponse.json({ id: postId, status: "draft" })
     }
 
