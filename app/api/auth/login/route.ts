@@ -6,7 +6,8 @@ import { createSessionToken, COOKIE_NAME } from "@/lib/auth"
 function errorRedirect(request: NextRequest, message: string) {
   const url = new URL("/login", request.url)
   url.searchParams.set("error", encodeURIComponent(message))
-  return NextResponse.redirect(url)
+  // 303 See Other: força o browser a fazer GET na URL de destino (não repete o POST)
+  return NextResponse.redirect(url, { status: 303 })
 }
 
 export async function POST(request: NextRequest) {
@@ -44,7 +45,8 @@ export async function POST(request: NextRequest) {
     const token = await createSessionToken({ id: user.id, name: user.name, email: user.email, plan: user.plan, isSuperAdmin: user.is_super_admin ?? false })
 
     const redirectTo = request.nextUrl.searchParams.get("redirectTo") || "/dashboard"
-    const response = NextResponse.redirect(new URL(redirectTo, request.url))
+    // 303 See Other: converte POST → GET, garantindo que o cookie seja enviado no GET para /dashboard
+    const response = NextResponse.redirect(new URL(redirectTo, request.url), { status: 303 })
     response.cookies.set(COOKIE_NAME, token, {
       httpOnly: true,
       secure: false,
