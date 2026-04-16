@@ -79,6 +79,7 @@ interface Props {
   workspaceId: string
   accounts: Account[]
   children?: React.ReactNode
+  trigger?: React.ReactNode
   // Modo edição
   editPost?: ExistingPost
   editOpen?: boolean
@@ -127,7 +128,7 @@ const toBrasiliaLocal = (date: Date): string => {
   return fmt.format(date).replace(" ", "T")
 }
 
-export function CreatePostDialog({ workspaceId, accounts, children, editPost, editOpen, onEditClose }: Props) {
+export function CreatePostDialog({ workspaceId, accounts, children, trigger, editPost, editOpen, onEditClose }: Props) {
   const router = useRouter()
   const isEditMode = !!editPost
 
@@ -531,7 +532,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, editPost, ed
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      {!isEditMode && children && <DialogTrigger asChild>{children}</DialogTrigger>}
+      {!isEditMode && (trigger || children) && <DialogTrigger asChild>{trigger ?? children}</DialogTrigger>}
 
       <DialogContent className="w-[calc(100vw-2rem)] sm:w-full sm:max-w-2xl max-h-[90dvh] flex flex-col p-0 overflow-hidden [&>button]:z-10">
         {publishingSuccess ? (
