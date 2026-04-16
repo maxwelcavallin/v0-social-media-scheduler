@@ -73,9 +73,12 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
   const posts = await sql`
     SELECT
       p.id, p.content, p.status, p.review_status, p.review_notes, p.scheduled_at, p.created_at,
-      p.published_at, p.error_message, p.thumbnail, p.primary_media_type, p.primary_media_url,
+      p.published_at, p.error_message,
       ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL) AS post_types,
       COALESCE(COUNT(DISTINCT pm.id), 0) AS media_count,
+      (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) AS thumbnail,
+      (SELECT pm2.media_type FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) AS primary_media_type,
+      (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) AS primary_media_url,
       COALESCE(json_agg(DISTINCT jsonb_build_object('id', sa.id, 'account_name', sa.account_name, 'account_username', sa.account_username)) FILTER (WHERE sa.id IS NOT NULL), '[]') AS accounts,
       ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.platform IS NOT NULL) AS platforms,
       ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) AS account_ids,
