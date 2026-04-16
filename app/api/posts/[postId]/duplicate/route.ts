@@ -11,6 +11,7 @@ export async function POST(
 
   const { postId } = await params
 
+  try {
   // Busca o post original garantindo que pertence ao usuário
   const [post] = await sql`
     SELECT p.id, p.content, p.workspace_id
@@ -36,8 +37,8 @@ export async function POST(
 
   // Cria o post duplicado como rascunho
   const [newPost] = await sql`
-    INSERT INTO posts (content, status, workspace_id, created_at, updated_at)
-    VALUES (${post.content}, 'draft', ${post.workspace_id}, NOW(), NOW())
+    INSERT INTO posts (content, status, workspace_id, created_by, created_at, updated_at)
+    VALUES (${post.content}, 'draft', ${post.workspace_id}, ${session.user.id}, NOW(), NOW())
     RETURNING id
   `
 
@@ -62,4 +63,8 @@ export async function POST(
   }
 
   return NextResponse.json({ id: newPost.id }, { status: 201 })
+  } catch (e: any) {
+    console.error("[v0] duplicate error:", e?.message, e?.stack)
+    return NextResponse.json({ error: e?.message || "Erro ao duplicar post" }, { status: 500 })
+  }
 }
