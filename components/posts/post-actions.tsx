@@ -19,8 +19,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { MoreHorizontal, Pencil, Trash2, CalendarX, Loader2, Copy } from "lucide-react"
+import { MoreHorizontal, Pencil, Trash2, CalendarX, Loader2, Copy, Share2, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
 
@@ -73,7 +81,34 @@ export function PostActions({ post, workspaceId, accounts, className }: Props) {
   const isScheduled = post.status === "scheduled"
   const isPublished = post.status === "published"
   const isDraft = post.status === "draft"
+  const canShare = ["draft", "in_review", "needs_changes"].includes(post.status)
   const [duplicating, setDuplicating] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleShare = async () => {
+    setSharing(true)
+    try {
+      const res = await fetch(`/api/posts/${post.id}/share`, { method: "POST" })
+      const data = await res.json()
+      if (data.url) {
+        setShareUrl(data.url)
+        setShareOpen(true)
+        router.refresh()
+      }
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return
+    await navigator.clipboard.writeText(shareUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const handleDuplicate = async () => {
     setDuplicating(true)
@@ -161,6 +196,15 @@ export function PostActions({ post, workspaceId, accounts, className }: Props) {
             }
             Duplicar como rascunho
           </DropdownMenuItem>
+          {canShare && (
+            <DropdownMenuItem onClick={handleShare} disabled={sharing}>
+              {sharing
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Share2 className="w-4 h-4 mr-2" />
+              }
+              Compartilhar para aprovação
+            </DropdownMenuItem>
+          )}
           {isScheduled && (
             <DropdownMenuItem onClick={() => setCancelOpen(true)}>
               <CalendarX className="w-4 h-4 mr-2" />
@@ -226,6 +270,32 @@ export function PostActions({ post, workspaceId, accounts, className }: Props) {
         editOpen={editOpen}
         onEditClose={() => setEditOpen(false)}
       />
+
+      {/* Share */}
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Compartilhar para aprovação</DialogTitle>
+            <DialogDescription>
+              Envie este link para o cliente revisar e aprovar o conteúdo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Input
+              readOnly
+              value={shareUrl || ""}
+              className="text-sm font-mono"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+            <Button variant="outline" size="icon" onClick={handleCopyLink} className="flex-shrink-0">
+              {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            O post foi marcado como &quot;Em revisão&quot;. Você será notificado quando o cliente responder.
+          </p>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

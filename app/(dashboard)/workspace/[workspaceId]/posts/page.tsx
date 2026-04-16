@@ -4,14 +4,17 @@ import { redirect, notFound } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid } from "lucide-react"
+import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid, MessageSquare } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
 import { PostActions } from "@/components/posts/post-actions"
 import { VideoThumbnail } from "@/components/posts/video-thumbnail"
+import { StatusFilter } from "@/components/posts/status-filter"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
+  searchParams: Promise<{ status?: string }>
 }
 
 const platformIcons: Record<string, React.ReactNode> = {
@@ -26,17 +29,24 @@ const postTypeIcons: Record<string, React.ReactNode> = {
   story: <ImageIcon className="w-3 h-3" />,
 }
 
-const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; className?: string }> = {
   draft: { label: "Rascunho", variant: "outline" },
   scheduled: { label: "Agendado", variant: "secondary" },
   published: { label: "Publicado", variant: "default" },
   failed: { label: "Falhou", variant: "destructive" },
+  in_review: { label: "Em revisão", variant: "outline", className: "border-blue-400 text-blue-600 dark:text-blue-400" },
+  approved: { label: "Aprovado", variant: "outline", className: "border-green-500 text-green-600 dark:text-green-400" },
+  needs_changes: { label: "Ajustar", variant: "outline", className: "border-amber-500 text-amber-600 dark:text-amber-400" },
 }
 
-export default async function WorkspacePostsPage({ params }: Props) {
+export default async function WorkspacePostsPage({ params, searchParams }: Props) {
   const { workspaceId } = await params
+  const { status: statusFilter } = await searchParams
   const session = await getSession()
   if (!session) redirect("/login")
+
+  const validStatuses = ["draft", "scheduled", "published", "failed", "in_review", "approved", "needs_changes"]
+  const filterStatus = statusFilter && validStatuses.includes(statusFilter) ? statusFilter : null
 
   const [workspace, accounts, posts] = await Promise.all([
     sql`
@@ -51,6 +61,7 @@ export default async function WorkspacePostsPage({ params }: Props) {
     `,
     sql`
       SELECT p.id, p.content, p.status, p.scheduled_at, p.published_at, p.created_at, p.error_message,
+        p.review_notes, p.review_status, p.review_at,
         ARRAY_AGG(DISTINCT sa.platform) FILTER (WHERE sa.id IS NOT NULL) as platforms,
         ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.id IS NOT NULL) as post_types,
         ARRAY_AGG(DISTINCT pt.social_account_id) FILTER (WHERE pt.social_account_id IS NOT NULL) as account_ids,
@@ -70,6 +81,7 @@ export default async function WorkspacePostsPage({ params }: Props) {
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
       WHERE p.workspace_id = ${workspaceId}
+        ${filterStatus ? sql`AND p.status = ${filterStatus}` : sql``}
       GROUP BY p.id
       ORDER BY COALESCE(p.scheduled_at, p.created_at) DESC
     `,
@@ -93,6 +105,8 @@ export default async function WorkspacePostsPage({ params }: Props) {
         </CreatePostDialog>
       </div>
 
+      <StatusFilter current={filterStatus} />
+
       {posts.length === 0 ? (
         <EmptyState
           icon={ImageIcon}
@@ -110,13 +124,11 @@ export default async function WorkspacePostsPage({ params }: Props) {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {posts.map((post: any) => {
-            const status = statusMap[post.status] || { label: post.status, variant: "outline" as const }
-            const postType = (post.post_types || [])[0] || "feed"
-
             return (
               <Card key={post.id} className="overflow-hidden hover:border-primary/30 transition-all group">
                 {/* Thumbnail */}
                 <div className="aspect-square bg-muted relative overflow-hidden">
+
                   {post.thumbnail ? (
                     // If thumbnail is a cover image or a regular image, show it directly.
                     // If the primary media is a video and there's no cover, VideoThumbnail captures a frame.
@@ -178,6 +190,14 @@ export default async function WorkspacePostsPage({ params }: Props) {
                       {post.error_message}
                     </p>
                   )}
+                  {post.status === "needs_changes" && post.review_notes && (
+                    <div className="flex gap-1.5 items-start bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5 mb-2">
+                      <MessageSquare className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-700 dark:text-amber-400 line-clamp-2 leading-relaxed">
+                        {post.review_notes}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                       {(() => {
@@ -199,7 +219,7 @@ export default async function WorkspacePostsPage({ params }: Props) {
                       })()}
                     </span>
                     <div className="flex items-center gap-1">
-                      <Badge variant={status.variant} className="text-xs">
+                      <Badge variant={status.variant} className={cn("text-xs", status.className)}>
                         {status.label}
                       </Badge>
                       <PostActions
