@@ -40,11 +40,14 @@ type Voice = {
   id: string
   name: string
   description: string | null
-  voice_style: "cloned" | "preset"
-  eleven_voice_id: string | null
-  sample_url: string | null
-  settings: Record<string, any> | null
-  is_favorite: boolean
+  type: string | null
+  base_voice: string | null
+  voice_style: string | null
+  voice_maturity: string | null
+  narrative_role: string | null
+  tonality: string | null
+  sample_urls: string[] | null
+  preview_url: string | null
   created_at: string
 }
 
@@ -67,14 +70,16 @@ function VoiceCard({
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  const previewUrl = voice.preview_url || voice.sample_urls?.[0] || null
+
   const handlePlay = () => {
-    if (!voice.sample_url) return
+    if (!previewUrl) return
     if (playing) {
       audioRef.current?.pause()
       setPlaying(false)
       return
     }
-    const audio = new Audio(voice.sample_url)
+    const audio = new Audio(previewUrl)
     audioRef.current = audio
     audio.play()
     setPlaying(true)
@@ -96,12 +101,12 @@ function VoiceCard({
                   variant="secondary"
                   className={cn(
                     "text-xs flex-shrink-0",
-                    voice.voice_style === "cloned"
+                    voice.type === "cloned"
                       ? "bg-primary/10 text-primary border-primary/20"
                       : "bg-muted text-muted-foreground"
                   )}
                 >
-                  {voice.voice_style === "cloned" ? "Clonada" : "Preset"}
+                  {voice.type === "cloned" ? "Clonada" : "Preset"}
                 </Badge>
               </div>
               {voice.description && (
@@ -111,7 +116,7 @@ function VoiceCard({
           </div>
 
           <div className="flex items-center gap-1 flex-shrink-0">
-            {voice.sample_url && (
+            {previewUrl && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -311,7 +316,7 @@ function NewVoiceDialog({
           body: JSON.stringify({
             name: name.trim(),
             description: description.trim() || undefined,
-            voice_style: "preset",
+            type: "preset",
           }),
         })
         const data = await res.json()

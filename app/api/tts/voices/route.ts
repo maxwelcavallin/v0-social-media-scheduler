@@ -24,10 +24,10 @@ export async function GET() {
   if (!workspaceId) return NextResponse.json({ voices: [] })
 
   const voices = await sql`
-    SELECT id, name, description, voice_style, eleven_voice_id, sample_url, settings, is_favorite, created_at
+    SELECT id, name, description, type, base_voice, voice_style, voice_maturity, narrative_role, tonality, sample_urls, preview_url, created_at
     FROM tts_voices
     WHERE workspace_id = ${workspaceId}
-    ORDER BY is_favorite DESC, created_at DESC
+    ORDER BY created_at DESC
   `
 
   return NextResponse.json({ voices })
@@ -42,22 +42,27 @@ export async function POST(req: NextRequest) {
   if (!workspaceId) return NextResponse.json({ error: "Workspace não encontrado" }, { status: 400 })
 
   const body = await req.json()
-  const { name, description, voice_style, eleven_voice_id, sample_url, settings } = body
+  const { name, description, type, base_voice, voice_style, voice_maturity, narrative_role, tonality, sample_urls, preview_url } = body
 
-  if (!name || !voice_style) {
-    return NextResponse.json({ error: "Nome e tipo são obrigatórios" }, { status: 400 })
+  if (!name) {
+    return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 })
   }
 
   const [voice] = await sql`
-    INSERT INTO tts_voices (workspace_id, name, description, voice_style, eleven_voice_id, sample_url, settings)
+    INSERT INTO tts_voices (workspace_id, name, description, type, base_voice, voice_style, voice_maturity, narrative_role, tonality, sample_urls, preview_url, created_by)
     VALUES (
       ${workspaceId},
       ${name},
       ${description ?? null},
-      ${voice_style},
-      ${eleven_voice_id ?? null},
-      ${sample_url ?? null},
-      ${settings ? JSON.stringify(settings) : null}
+      ${type ?? null},
+      ${base_voice ?? null},
+      ${voice_style ?? null},
+      ${voice_maturity ?? null},
+      ${narrative_role ?? null},
+      ${tonality ?? null},
+      ${sample_urls ? JSON.stringify(sample_urls) : null},
+      ${preview_url ?? null},
+      ${session.user.id}
     )
     RETURNING *
   `
