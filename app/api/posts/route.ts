@@ -85,18 +85,17 @@ async function publishToInstagram(item: {
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
-  // Contas IG direto (page_id = null) usam graph.instagram.com/me com token na query string
-  // Contas via Facebook usam graph.facebook.com/{account_id} com token no body JSON
+  // page_id preenchido = conectado via Facebook Login → usar graph.facebook.com/{page_id}
+  // page_id null = conectado via Instagram Login direto → usar graph.instagram.com/me
   const isDirectIg = !page_id
   const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
-
-  // Para IG direto, o token vai na query string (exigência da Instagram Graph API)
+  const igFbTarget = page_id // Para FB Login, o container é criado na Page, não no account_id
   const mediaEndpoint = isDirectIg
     ? `${baseApi}/me/media?access_token=${access_token}`
-    : `${baseApi}/${account_id}/media`
+    : `${baseApi}/${igFbTarget}/media`
   const publishEndpoint = isDirectIg
     ? `${baseApi}/me/media_publish?access_token=${access_token}`
-    : `${baseApi}/${account_id}/media_publish`
+    : `${baseApi}/${igFbTarget}/media_publish`
 
   // Monta o body sem access_token para IG direto (já está na query string)
   const makeBody = (params: Record<string, string | boolean>) => {
@@ -130,7 +129,6 @@ async function publishToInstagram(item: {
       body: makeBody(containerParams),
     })
     const containerData = await containerRes.json()
-    console.log("[v0] IG container response:", containerRes.status, JSON.stringify(containerData))
     if (containerData.error) {
       throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
     }
