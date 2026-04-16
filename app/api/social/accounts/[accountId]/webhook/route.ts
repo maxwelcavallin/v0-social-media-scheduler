@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { randomBytes } from "crypto"
-
-function getBaseUrl(request: NextRequest): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || ""
-  const proto = request.headers.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
-}
+import { getAppUrl } from "@/lib/app-url"
 
 // GET — retorna o webhook_secret e URL para a conta
 export async function GET(
@@ -30,10 +24,8 @@ export async function GET(
   `
   if (!account) return NextResponse.json({ error: "Conta não encontrada" }, { status: 404 })
 
-  const baseUrl = getBaseUrl(request)
-
   return NextResponse.json({
-    webhook_url: `${baseUrl}/api/webhook/${accountId}`,
+    webhook_url: `${getAppUrl(request)}/api/webhook/${accountId}`,
     webhook_secret: account.webhook_secret,
     has_secret: !!account.webhook_secret,
   })
@@ -66,10 +58,8 @@ export async function POST(
     WHERE id = ${accountId}
   `
 
-  const baseUrl = getBaseUrl(request)
-
   return NextResponse.json({
-    webhook_url: `${baseUrl}/api/webhook/${accountId}`,
+    webhook_url: `${getAppUrl(request)}/api/webhook/${accountId}`,
     webhook_secret: newSecret,
   })
 }

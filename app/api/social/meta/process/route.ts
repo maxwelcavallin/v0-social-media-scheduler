@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { checkSocialAccountLimit } from "@/lib/plans"
+import { getAppUrl } from "@/lib/app-url"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
 
@@ -64,9 +65,7 @@ export async function POST(request: NextRequest) {
   // Usa o redirectUri enviado pelo cliente (passado pelo callback), que é idêntico
   // ao que foi enviado ao Facebook no momento da autorização — obrigatório para validação.
   // Fallback para reconstrução a partir do host apenas se não vier no body.
-  const host = request.headers.get("host") ?? ""
-  const protocol = host.startsWith("localhost") ? "http" : "https"
-  const redirectUri = bodyRedirectUri || `${protocol}://${host}/api/social/meta/callback`
+  const redirectUri = bodyRedirectUri || `${getAppUrl(request)}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
   const appSecret = process.env.FACEBOOK_APP_SECRET

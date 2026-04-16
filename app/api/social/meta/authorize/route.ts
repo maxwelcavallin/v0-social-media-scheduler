@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getAppUrl } from "@/lib/app-url"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
@@ -15,12 +16,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-  console.log("[v0] meta/authorize: usando FACEBOOK_APP_ID:", appId, "redirectUri:", `${request.headers.get("host")?.startsWith("localhost") ? "http" : "https"}://${request.headers.get("host")}/api/social/meta/callback`)
-
-  // Build redirect_uri from the actual request host — keeps it consistent with the callback
-  const host = request.headers.get("host") ?? ""
-  const protocol = host.startsWith("localhost") ? "http" : "https"
-  const redirectUri = `${protocol}://${host}/api/social/meta/callback`
+  const redirectUri = `${getAppUrl(request)}/api/social/meta/callback`
 
   const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri })).toString("base64")
 
