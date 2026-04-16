@@ -67,7 +67,7 @@ interface Props {
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/calendar", label: "Calendário", icon: CalendarDays },
-  { href: "/dashboard/posts", label: "Posts", icon: ImageIcon },
+  { href: "/dashboard/posts", label: "Posts geral", icon: ImageIcon },
   { href: "/dashboard/tts", label: "Text to Voice", icon: Mic },
   { href: "/dashboard/plans", label: "Planos", icon: Zap },
   { href: "/dashboard/settings", label: "Configurações", icon: Settings },
