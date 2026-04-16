@@ -212,7 +212,15 @@ export async function POST(request: NextRequest) {
     const saved: { platform: string; name: string }[] = []
 
     for (const page of pages) {
-      const pageToken = page.access_token || userToken
+      // page.access_token é o Page Access Token — obrigatório para publicar no Instagram via Facebook Login.
+      // Se vier undefined, significa que o usuário não concedeu as permissões necessárias (pages_show_list / pages_read_engagement).
+      // Nunca fazer fallback para o userToken, pois causaria erro 190 ao tentar publicar.
+      if (!page.access_token) {
+        console.warn("[v0] meta/process: página", page.id, page.name, "sem page token — pulando")
+        continue
+      }
+      const pageToken = page.access_token
+      console.log("[v0] meta/process: salvando página", page.name, "pageToken presente:", !!pageToken, "token prefix:", pageToken?.substring(0, 8))
 
       await upsertAccount({
         workspaceId,
