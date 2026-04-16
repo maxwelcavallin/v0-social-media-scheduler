@@ -180,7 +180,7 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
                       <p className="text-xs text-muted-foreground mb-1 truncate">{names.join(", ")}</p>
                     ) : null
                   })()}
-                  <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed">
+                  <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed whitespace-pre-wrap">
                     {postType === "story" ? "Story" : (post.content || "Sem legenda")}
                   </p>
                   <div className="flex items-center justify-between">

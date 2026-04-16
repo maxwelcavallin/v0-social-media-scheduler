@@ -197,7 +197,7 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
                       <p className="text-xs text-muted-foreground font-medium mb-1 truncate">{names.join(", ")}</p>
                     ) : null
                   })()}
-                  <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed">
+                  <p className="text-sm text-foreground line-clamp-2 mb-2 leading-relaxed whitespace-pre-wrap">
                     {postType === "story" ? "Story" : (post.content || "Sem legenda")}
                   </p>
                   {post.status === "failed" && post.error_message && (

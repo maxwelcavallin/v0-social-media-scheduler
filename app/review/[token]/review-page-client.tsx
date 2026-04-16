@@ -264,7 +264,7 @@ function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedi
         </div>
         <p className="text-[13px] font-semibold text-[#262626] mb-1">{liked ? "1.285" : "1.284"} curtidas</p>
         {post.content && (
-          <p className="text-[13px] text-[#262626] leading-relaxed">
+          <p className="text-[13px] text-[#262626] leading-relaxed whitespace-pre-wrap">
             <span className="font-semibold">{username} </span>
             {longCaption && !captionExpanded
               ? <>{post.content.slice(0, maxCaption)}<button onClick={() => setCaptionExpanded(true)} className="text-[#8E8E8E]">... mais</button></>
@@ -358,7 +358,7 @@ function StoryPost({ post, media, onExpand }: { post: ReviewPost; media: PostMed
       {/* Caption */}
       {post.content && (
         <div className="absolute bottom-20 left-4 right-4 z-10">
-          <p className="text-white text-sm leading-relaxed drop-shadow-md line-clamp-3">{post.content}</p>
+          <p className="text-white text-sm leading-relaxed drop-shadow-md line-clamp-3 whitespace-pre-wrap">{post.content}</p>
         </div>
       )}
 
@@ -454,7 +454,7 @@ function ReelsPost({ post, media, onExpand }: { post: ReviewPost; media: PostMed
           <span className="text-white/70 text-[11px]">• Seguir</span>
         </div>
         {post.content && (
-          <p className="text-white text-[13px] leading-relaxed line-clamp-2 mb-2">{post.content}</p>
+          <p className="text-white text-[13px] leading-relaxed line-clamp-2 mb-2 whitespace-pre-wrap">{post.content}</p>
         )}
         <div className="flex items-center gap-1.5">
           <Music2 className="w-3.5 h-3.5 text-white flex-shrink-0" />
