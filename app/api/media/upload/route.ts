@@ -47,10 +47,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           }),
         }
       },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        // Called after upload completes — can update DB here if needed
-        console.log("[upload] completed:", blob.url, tokenPayload)
-      },
+
     })
 
     return NextResponse.json(jsonResponse)
