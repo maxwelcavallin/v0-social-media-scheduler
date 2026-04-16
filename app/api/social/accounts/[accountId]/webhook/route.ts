@@ -3,9 +3,16 @@ import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { randomBytes } from "crypto"
 
+function getBaseUrl(request: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || ""
+  const proto = request.headers.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https")
+  return `${proto}://${host}`
+}
+
 // GET — retorna o webhook_secret e URL para a conta
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   const session = await getSession()
@@ -23,7 +30,7 @@ export async function GET(
   `
   if (!account) return NextResponse.json({ error: "Conta não encontrada" }, { status: 404 })
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://social.list.dog"
+  const baseUrl = getBaseUrl(request)
 
   return NextResponse.json({
     webhook_url: `${baseUrl}/api/webhook/${accountId}`,
@@ -34,7 +41,7 @@ export async function GET(
 
 // POST — gera ou regenera o webhook_secret
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ accountId: string }> }
 ) {
   const session = await getSession()
@@ -59,7 +66,7 @@ export async function POST(
     WHERE id = ${accountId}
   `
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://social.list.dog"
+  const baseUrl = getBaseUrl(request)
 
   return NextResponse.json({
     webhook_url: `${baseUrl}/api/webhook/${accountId}`,
