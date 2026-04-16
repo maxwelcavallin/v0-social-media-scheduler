@@ -24,7 +24,7 @@ export async function GET() {
   if (!workspaceId) return NextResponse.json({ voices: [] })
 
   const voices = await sql`
-    SELECT id, name, description, voice_type, eleven_voice_id, sample_url, settings, is_favorite, created_at
+    SELECT id, name, description, voice_style, eleven_voice_id, sample_url, settings, is_favorite, created_at
     FROM tts_voices
     WHERE workspace_id = ${workspaceId}
     ORDER BY is_favorite DESC, created_at DESC
@@ -42,19 +42,19 @@ export async function POST(req: NextRequest) {
   if (!workspaceId) return NextResponse.json({ error: "Workspace não encontrado" }, { status: 400 })
 
   const body = await req.json()
-  const { name, description, voice_type, eleven_voice_id, sample_url, settings } = body
+  const { name, description, voice_style, eleven_voice_id, sample_url, settings } = body
 
-  if (!name || !voice_type) {
+  if (!name || !voice_style) {
     return NextResponse.json({ error: "Nome e tipo são obrigatórios" }, { status: 400 })
   }
 
   const [voice] = await sql`
-    INSERT INTO tts_voices (workspace_id, name, description, voice_type, eleven_voice_id, sample_url, settings)
+    INSERT INTO tts_voices (workspace_id, name, description, voice_style, eleven_voice_id, sample_url, settings)
     VALUES (
       ${workspaceId},
       ${name},
       ${description ?? null},
-      ${voice_type},
+      ${voice_style},
       ${eleven_voice_id ?? null},
       ${sample_url ?? null},
       ${settings ? JSON.stringify(settings) : null}

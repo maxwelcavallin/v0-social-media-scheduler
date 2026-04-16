@@ -40,7 +40,7 @@ type Voice = {
   id: string
   name: string
   description: string | null
-  voice_type: "cloned" | "preset"
+  voice_style: "cloned" | "preset"
   eleven_voice_id: string | null
   sample_url: string | null
   settings: Record<string, any> | null
@@ -96,12 +96,12 @@ function VoiceCard({
                   variant="secondary"
                   className={cn(
                     "text-xs flex-shrink-0",
-                    voice.voice_type === "cloned"
+                    voice.voice_style === "cloned"
                       ? "bg-primary/10 text-primary border-primary/20"
                       : "bg-muted text-muted-foreground"
                   )}
                 >
-                  {voice.voice_type === "cloned" ? "Clonada" : "Preset"}
+                  {voice.voice_style === "cloned" ? "Clonada" : "Preset"}
                 </Badge>
               </div>
               {voice.description && (
@@ -311,7 +311,7 @@ function NewVoiceDialog({
           body: JSON.stringify({
             name: name.trim(),
             description: description.trim() || undefined,
-            voice_type: "preset",
+            voice_style: "preset",
           }),
         })
         const data = await res.json()

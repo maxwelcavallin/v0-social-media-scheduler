@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   // Salva a voz clonada no banco
   const [voice] = await sql`
-    INSERT INTO tts_voices (workspace_id, name, description, voice_type, eleven_voice_id, sample_url)
+    INSERT INTO tts_voices (workspace_id, name, description, voice_style, eleven_voice_id, sample_url)
     VALUES (
       ${workspaceId},
       ${name},
