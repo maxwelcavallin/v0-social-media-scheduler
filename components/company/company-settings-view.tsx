@@ -39,12 +39,19 @@ interface Invitation {
   role: string
   token: string
   created_at: string
+  workspace_ids: string[]
+}
+
+interface Workspace {
+  id: string
+  name: string
 }
 
 interface Props {
   company: Company | null
   members: Member[]
   invitations: Invitation[]
+  workspaces: Workspace[]
   currentUserId: string
   isAdmin: boolean
 }
@@ -58,6 +65,7 @@ const companySchema = z.object({
 const inviteSchema = z.object({
   email: z.string().email("E-mail inválido"),
   role: z.enum(["admin", "member"]),
+  workspace_ids: z.array(z.string()).default([]),
 })
 
 type CompanyForm = z.infer<typeof companySchema>
@@ -78,13 +86,14 @@ function formatDocument(value: string, type: "cpf" | "cnpj") {
     .replace(/(\d{4})(\d{1,2})$/, "$1-$2")
 }
 
-export function CompanySettingsView({ company, members, invitations: initialInvitations, currentUserId, isAdmin }: Props) {
+export function CompanySettingsView({ company, members, invitations: initialInvitations, workspaces, currentUserId, isAdmin }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const [selectedWorkspaces, setSelectedWorkspaces] = useState<string[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>(initialInvitations)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
@@ -163,17 +172,24 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
       const res = await fetch("/api/company/invitations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, workspace_ids: selectedWorkspaces }),
       })
       const json = await res.json()
       if (!res.ok) { setInviteError(json.error || "Erro ao convidar."); return }
       setInvitations((prev) => [json.invitation, ...prev])
       inviteForm.reset()
+      setSelectedWorkspaces([])
     } catch {
       setInviteError("Erro inesperado.")
     } finally {
       setInviting(false)
     }
+  }
+
+  const toggleWorkspace = (id: string) => {
+    setSelectedWorkspaces((prev) =>
+      prev.includes(id) ? prev.filter((w) => w !== id) : [...prev, id]
+    )
   }
 
   const onRemoveMember = async (userId: string) => {
@@ -392,6 +408,28 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
                   </select>
                 </div>
               </div>
+              {workspaces.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <Label>Vincular aos workspaces</Label>
+                  <p className="text-xs text-muted-foreground">Selecione os workspaces que o convidado terá acesso ao aceitar o convite.</p>
+                  <div className="flex flex-col gap-1.5 mt-1 max-h-40 overflow-y-auto rounded-md border border-input p-2">
+                    {workspaces.map((ws) => (
+                      <label key={ws.id} className="flex items-center gap-2.5 py-1 px-1.5 rounded hover:bg-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedWorkspaces.includes(ws.id)}
+                          onChange={() => toggleWorkspace(ws.id)}
+                          className="w-4 h-4 rounded border-input accent-primary"
+                        />
+                        <span className="text-sm">{ws.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {selectedWorkspaces.length > 0 && (
+                    <p className="text-xs text-muted-foreground">{selectedWorkspaces.length} workspace{selectedWorkspaces.length > 1 ? "s" : ""} selecionado{selectedWorkspaces.length > 1 ? "s" : ""}</p>
+                  )}
+                </div>
+              )}
               <Button type="submit" disabled={inviting} className="self-start gap-2">
                 {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                 Gerar convite
@@ -408,7 +446,10 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
                     <div key={inv.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{inv.email}</p>
-                        <p className="text-xs text-muted-foreground">{inv.role === "admin" ? "Admin" : "Membro"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {inv.role === "admin" ? "Admin" : "Membro"}
+                          {inv.workspace_ids?.length > 0 && ` · ${inv.workspace_ids.length} workspace${inv.workspace_ids.length > 1 ? "s" : ""}`}
+                        </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyLink(inv.token)} title="Copiar link de convite">

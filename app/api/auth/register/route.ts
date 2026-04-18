@@ -26,6 +26,34 @@ export async function POST(request: NextRequest) {
       RETURNING id, name, email, plan
     `
 
+    // Verificar convites pendentes para esse email e vincular automaticamente
+    const pendingInvites = await sql`
+      SELECT * FROM company_invitation
+      WHERE email = ${email.toLowerCase()} AND accepted_at IS NULL
+    `
+    for (const invite of pendingInvites) {
+      // Vincular à empresa
+      await sql`
+        INSERT INTO company_member (company_id, user_id, role)
+        VALUES (${invite.company_id}, ${user.id}, ${invite.role})
+        ON CONFLICT (company_id, user_id) DO NOTHING
+      `
+      // Vincular aos workspaces
+      if (invite.workspace_ids && invite.workspace_ids.length > 0) {
+        for (const workspaceId of invite.workspace_ids) {
+          await sql`
+            INSERT INTO "member" (organization_id, user_id, role)
+            VALUES (${workspaceId}, ${user.id}, 'member')
+            ON CONFLICT (organization_id, user_id) DO NOTHING
+          `
+        }
+      }
+      // Marcar como aceito
+      await sql`
+        UPDATE company_invitation SET accepted_at = NOW() WHERE id = ${invite.id}
+      `
+    }
+
     const token = await createSessionToken({ id: user.id, name: user.name, email: user.email, plan: user.plan })
 
     const response = NextResponse.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, plan: user.plan } })

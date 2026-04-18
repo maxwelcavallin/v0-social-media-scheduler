@@ -7,7 +7,7 @@ export default async function CompanySettingsPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const [companyRows, membersRows, invitationsRows] = await Promise.all([
+  const [companyRows, membersRows, invitationsRows, workspacesRows] = await Promise.all([
     sql`
       SELECT c.id, c.name, c.document, c.document_type, c.owner_id, c.created_at,
         cm.role
@@ -26,13 +26,22 @@ export default async function CompanySettingsPage() {
       ORDER BY cm.joined_at ASC
     `,
     sql`
-      SELECT ci.id, ci.email, ci.role, ci.token, ci.created_at
+      SELECT ci.id, ci.email, ci.role, ci.token, ci.created_at, ci.workspace_ids
       FROM company_invitation ci
       JOIN company_member cm ON cm.company_id = ci.company_id
       WHERE cm.user_id = ${session.user.id}
         AND cm.role = 'admin'
         AND ci.accepted_at IS NULL
       ORDER BY ci.created_at DESC
+    `,
+    sql`
+      SELECT o.id, o.name
+      FROM "organization" o
+      JOIN "member" m ON m.organization_id = o.id
+      JOIN company_member cm ON cm.user_id = ${session.user.id}
+      JOIN company c ON c.id = cm.company_id
+      WHERE m.user_id = ${session.user.id}
+      ORDER BY o.name ASC
     `,
   ])
 
@@ -51,6 +60,7 @@ export default async function CompanySettingsPage() {
         company={company}
         members={membersRows}
         invitations={invitationsRows}
+        workspaces={workspacesRows}
         currentUserId={session.user.id}
         isAdmin={isAdmin}
       />

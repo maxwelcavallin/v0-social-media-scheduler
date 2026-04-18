@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
 
   const body = await req.json()
-  const { email, role = "member" } = body
+  const { email, role = "member", workspace_ids = [] } = body
 
   if (!email?.trim()) {
     return NextResponse.json({ error: "E-mail obrigatório." }, { status: 400 })
@@ -54,10 +54,11 @@ export async function POST(req: NextRequest) {
 
   // Upsert convite
   const [invitation] = await sql`
-    INSERT INTO company_invitation (company_id, email, role, invited_by)
-    VALUES (${companyId}, ${email.toLowerCase()}, ${role}, ${session.user.id})
+    INSERT INTO company_invitation (company_id, email, role, invited_by, workspace_ids)
+    VALUES (${companyId}, ${email.toLowerCase()}, ${role}, ${session.user.id}, ${workspace_ids})
     ON CONFLICT (company_id, email) DO UPDATE
-      SET role = EXCLUDED.role, token = gen_random_uuid()::text, accepted_at = NULL, created_at = NOW()
+      SET role = EXCLUDED.role, workspace_ids = EXCLUDED.workspace_ids,
+          token = gen_random_uuid()::text, accepted_at = NULL, created_at = NOW()
     RETURNING *
   `
 

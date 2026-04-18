@@ -35,12 +35,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ to
     return NextResponse.json({ error: "Este convite foi enviado para outro e-mail." }, { status: 403 })
   }
 
-  // Inserir como membro
+  // Inserir como membro da empresa
   await sql`
     INSERT INTO company_member (company_id, user_id, role)
     VALUES (${invitation.company_id}, ${session.user.id}, ${invitation.role})
     ON CONFLICT (company_id, user_id) DO NOTHING
   `
+
+  // Vincular aos workspaces indicados no convite
+  if (invitation.workspace_ids && invitation.workspace_ids.length > 0) {
+    for (const workspaceId of invitation.workspace_ids) {
+      await sql`
+        INSERT INTO "member" (organization_id, user_id, role)
+        VALUES (${workspaceId}, ${session.user.id}, 'member')
+        ON CONFLICT (organization_id, user_id) DO NOTHING
+      `
+    }
+  }
 
   // Marcar convite como aceito
   await sql`
