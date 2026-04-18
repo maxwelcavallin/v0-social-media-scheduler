@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
-import { Building2, Users, Mail, Trash2, Loader2, Plus, Copy, Check, ShieldCheck } from "lucide-react"
+import { Building2, Users, Mail, Trash2, Loader2, Plus, Copy, Check, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link"
 
 interface Company {
@@ -25,12 +25,11 @@ interface Company {
 }
 
 interface Member {
-  id: string
   user_id: string
+  role: string
   name: string
   email: string
-  role: string
-  joined_at: string
+  member_workspaces: { id: string; name: string }[]
 }
 
 interface Invitation {
@@ -94,8 +93,15 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [selectedWorkspaces, setSelectedWorkspaces] = useState<string[]>([])
+  const [expandedMember, setExpandedMember] = useState<string | null>(null)
+  const [memberWorkspaces, setMemberWorkspaces] = useState<Record<string, { id: string; name: string }[]>>(
+    Object.fromEntries(members.map((m) => [m.user_id, m.member_workspaces ?? []]))
+  )
+  const [workspaceLoading, setWorkspaceLoading] = useState<string | null>(null)
+  const [removingMember, setRemovingMember] = useState<string | null>(null)
   const [invitations, setInvitations] = useState<Invitation[]>(initialInvitations)
-  const [removingId, setRemovingId] = useState<string | null>(null)
+  const [currentMembers, setCurrentMembers] = useState<Member[]>(members)
+
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [docValue, setDocValue] = useState(company?.document ?? "")
   const [creatingCompany, setCreatingCompany] = useState(false)
@@ -165,6 +171,41 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
     }
   }
 
+  const handleToggleWorkspace = async (userId: string, workspaceId: string, currentlyIn: boolean) => {
+    setWorkspaceLoading(workspaceId + userId)
+    try {
+      const res = await fetch(`/api/company/members/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace_id: workspaceId, action: currentlyIn ? "remove" : "add" }),
+      })
+      if (!res.ok) return
+      setMemberWorkspaces((prev) => {
+        const current = prev[userId] ?? []
+        if (currentlyIn) {
+          return { ...prev, [userId]: current.filter((w) => w.id !== workspaceId) }
+        } else {
+          const ws = workspaces.find((w) => w.id === workspaceId)
+          return { ...prev, [userId]: ws ? [...current, ws] : current }
+        }
+      })
+    } finally {
+      setWorkspaceLoading(null)
+    }
+  }
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!confirm("Tem certeza que deseja remover este membro da empresa e de todos os workspaces?")) return
+    setRemovingMember(userId)
+    try {
+      const res = await fetch(`/api/company/members/${userId}`, { method: "DELETE" })
+      if (!res.ok) return
+      setCurrentMembers((prev) => prev.filter((m) => m.user_id !== userId))
+    } finally {
+      setRemovingMember(null)
+    }
+  }
+
   const onInvite = async (data: InviteForm) => {
     setInviting(true)
     setInviteError(null)
@@ -190,20 +231,6 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
     setSelectedWorkspaces((prev) =>
       prev.includes(id) ? prev.filter((w) => w !== id) : [...prev, id]
     )
-  }
-
-  const onRemoveMember = async (userId: string) => {
-    setRemovingId(userId)
-    try {
-      await fetch("/api/company/members", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId }),
-      })
-      router.refresh()
-    } finally {
-      setRemovingId(null)
-    }
   }
 
   const onRevokeInvitation = async (token: string) => {
@@ -335,42 +362,100 @@ export function CompanySettingsView({ company, members, invitations: initialInvi
             </div>
             <div>
               <CardTitle className="text-base">Membros da empresa</CardTitle>
-              <CardDescription className="text-sm">{members.length} {members.length === 1 ? "membro" : "membros"}</CardDescription>
+              <CardDescription className="text-sm">{currentMembers.length} {currentMembers.length === 1 ? "membro" : "membros"}</CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {members.map((member) => (
-            <div key={member.id} className="flex items-center justify-between gap-3 py-2">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0 text-sm font-medium text-muted-foreground">
-                  {member.name.charAt(0).toUpperCase()}
+        <CardContent className="flex flex-col divide-y divide-border">
+          {currentMembers.map((member) => {
+            const isExpanded = expandedMember === member.user_id
+            const userWorkspaces = memberWorkspaces[member.user_id] ?? []
+            const isSelf = member.user_id === currentUserId
+            return (
+              <div key={member.user_id} className="py-3 first:pt-0 last:pb-0">
+                {/* Linha principal do membro */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0 text-sm font-medium text-muted-foreground">
+                      {member.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{member.name} {isSelf && <span className="text-xs text-muted-foreground">(você)</span>}</p>
+                      <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge variant={member.role === "admin" ? "default" : "secondary"} className="text-xs gap-1">
+                      {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
+                      {member.role === "admin" ? "Admin" : "Membro"}
+                    </Badge>
+                    {isAdmin && !isSelf && (
+                      <>
+                        {/* Toggle workspaces */}
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-7 px-2 text-xs text-muted-foreground gap-1"
+                          onClick={() => setExpandedMember(isExpanded ? null : member.user_id)}
+                        >
+                          <Building2 className="w-3.5 h-3.5" />
+                          {userWorkspaces.length}
+                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </Button>
+                        {/* Remover da empresa */}
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleRemoveMember(member.user_id)}
+                          disabled={removingMember === member.user_id}
+                          title="Remover da empresa"
+                        >
+                          {removingMember === member.user_id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Trash2 className="w-3.5 h-3.5" />}
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{member.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{member.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Badge variant={member.role === "admin" ? "default" : "secondary"} className="text-xs gap-1">
-                  {member.role === "admin" && <ShieldCheck className="w-3 h-3" />}
-                  {member.role === "admin" ? "Admin" : "Membro"}
-                </Badge>
-                {isAdmin && member.user_id !== currentUserId && (
-                  <Button
-                    variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => onRemoveMember(member.user_id)}
-                    disabled={removingId === member.user_id}
-                  >
-                    {removingId === member.user_id
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <Trash2 className="w-3.5 h-3.5" />
-                    }
-                  </Button>
+
+                {/* Painel de workspaces expandível */}
+                {isExpanded && isAdmin && !isSelf && (
+                  <div className="mt-3 ml-11 rounded-md border border-border bg-muted/30 p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">Acesso aos workspaces</p>
+                    {workspaces.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Nenhum workspace disponível.</p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {workspaces.map((ws) => {
+                          const hasAccess = userWorkspaces.some((w) => w.id === ws.id)
+                          const loadingThis = workspaceLoading === ws.id + member.user_id
+                          return (
+                            <label key={ws.id} className="flex items-center gap-2.5 py-1 px-1.5 rounded hover:bg-muted cursor-pointer">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleWorkspace(member.user_id, ws.id, hasAccess)}
+                                disabled={loadingThis}
+                                className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                  hasAccess
+                                    ? "bg-primary border-primary text-primary-foreground"
+                                    : "border-input bg-background"
+                                }`}
+                              >
+                                {loadingThis
+                                  ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  : hasAccess && <Check className="w-2.5 h-2.5" />}
+                              </button>
+                              <span className="text-sm">{ws.name}</span>
+                              {hasAccess && <span className="ml-auto text-xs text-muted-foreground">com acesso</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            )
+          })}
         </CardContent>
       </Card>
 

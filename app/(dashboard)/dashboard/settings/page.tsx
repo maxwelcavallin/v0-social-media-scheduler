@@ -17,13 +17,23 @@ export default async function CompanySettingsPage() {
       LIMIT 1
     `,
     sql`
-      SELECT cm.id, cm.role, cm.joined_at,
-        u.id as user_id, u.name, u.email
+      SELECT
+        cm.user_id, cm.role,
+        u.name, u.email,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object('id', o.id, 'name', o.name) ORDER BY o.name)
+            FROM "organization" o
+            JOIN "member" m ON m.organization_id = o.id
+            WHERE m.user_id = cm.user_id
+          ),
+          '[]'::json
+        ) AS member_workspaces
       FROM company_member cm
-      JOIN users u ON u.id = cm.user_id
+      JOIN "user" u ON u.id = cm.user_id
       JOIN company_member my_cm ON my_cm.company_id = cm.company_id
       WHERE my_cm.user_id = ${session.user.id}
-      ORDER BY cm.joined_at ASC
+      ORDER BY u.name ASC
     `,
     sql`
       SELECT ci.id, ci.email, ci.role, ci.token, ci.created_at, ci.workspace_ids
