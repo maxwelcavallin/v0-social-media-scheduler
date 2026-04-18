@@ -14,7 +14,7 @@ export default async function DashboardPage() {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const [workspaces, recentPosts, stats] = await Promise.all([
+  const [workspaces, recentPosts, stats, roleRows] = await Promise.all([
     sql`
       SELECT o.id, o.name, o.slug, o.logo, o.created_at,
         COUNT(DISTINCT sa.id)::int as accounts_count,
@@ -57,9 +57,13 @@ export default async function DashboardPage() {
       LEFT JOIN social_accounts sa ON sa.workspace_id = o.id AND sa.is_active = true
       WHERE m.user_id = ${session.user.id}
     `.catch(() => []),
+    sql`
+      SELECT role FROM company_member WHERE user_id = ${session.user.id} LIMIT 1
+    `.catch(() => []),
   ])
 
   const statsData = stats[0] || { scheduled: 0, published: 0, connected_accounts: 0 }
+  const isAdmin = roleRows[0]?.role === "admin"
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl">
@@ -148,7 +152,7 @@ export default async function DashboardPage() {
             {workspaces.map((ws: any) => (
               <Link key={ws.id} href={`/workspace/${ws.id}`}>
                 <Card className="hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer h-full relative group">
-                  <WorkspaceActions workspace={ws} />
+                  <WorkspaceActions workspace={ws} isAdmin={isAdmin} />
                   <CardHeader className="pb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">

@@ -30,9 +30,10 @@ interface Workspace {
 
 interface Props {
   workspace: Workspace
+  isAdmin?: boolean
 }
 
-export function WorkspaceActions({ workspace }: Props) {
+export function WorkspaceActions({ workspace, isAdmin = false }: Props) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -93,14 +94,18 @@ export function WorkspaceActions({ workspace }: Props) {
             <Pencil className="w-3.5 h-3.5" />
             Editar
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="gap-2 text-destructive focus:text-destructive"
-            onClick={(e) => { e.preventDefault(); setConfirmName(""); setError(null); setDeleteOpen(true) }}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Excluir
-          </DropdownMenuItem>
+          {isAdmin && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="gap-2 text-destructive focus:text-destructive"
+                onClick={(e) => { e.preventDefault(); setConfirmName(""); setError(null); setDeleteOpen(true) }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluir
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

@@ -44,7 +44,7 @@ export async function DELETE(
   const session = await getSession()
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
 
-  // Verify ownership
+  // Verify workspace membership
   const membership = await sql`
     SELECT id FROM "member"
     WHERE organization_id = ${workspaceId} AND user_id = ${session.user.id}
@@ -52,6 +52,15 @@ export async function DELETE(
   `
   if (membership.length === 0)
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 })
+
+  // Only company admins can delete workspaces
+  const adminCheck = await sql`
+    SELECT cm.id FROM company_member cm
+    WHERE cm.user_id = ${session.user.id} AND cm.role = 'admin'
+    LIMIT 1
+  `
+  if (adminCheck.length === 0)
+    return NextResponse.json({ error: "Apenas administradores podem excluir workspaces." }, { status: 403 })
 
   // Delete in dependency order
   await sql`DELETE FROM post_queue WHERE post_id IN (SELECT id FROM posts WHERE workspace_id = ${workspaceId})`
