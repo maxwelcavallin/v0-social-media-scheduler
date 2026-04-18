@@ -52,7 +52,7 @@ export function DashboardHeader({ user }: Props) {
             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="gap-2" onClick={() => router.push("/dashboard/settings")}>
+          <DropdownMenuItem className="gap-2" onClick={() => router.push("/dashboard/profile")}>
             <User className="w-4 h-4" />
             Perfil
           </DropdownMenuItem>
