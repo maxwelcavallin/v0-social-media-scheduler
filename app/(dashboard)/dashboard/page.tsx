@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Building2, Plus, ImageIcon, CheckCircle2, Clock } from "lucide-react"
 import Link from "next/link"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
+import { WorkspaceActions } from "@/components/workspace/workspace-actions"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { RecentPostsFilter } from "@/components/dashboard/recent-posts-filter"
 
@@ -146,13 +147,14 @@ export default async function DashboardPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {workspaces.map((ws: any) => (
               <Link key={ws.id} href={`/workspace/${ws.id}`}>
-                <Card className="hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer h-full">
+                <Card className="hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer h-full relative group">
+                  <WorkspaceActions workspace={ws} />
                   <CardHeader className="pb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                         <Building2 className="w-4 h-4 text-primary" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 pr-6">
                         <CardTitle className="text-base truncate">{ws.name}</CardTitle>
                         <CardDescription className="text-xs">@{ws.slug}</CardDescription>
                       </div>
