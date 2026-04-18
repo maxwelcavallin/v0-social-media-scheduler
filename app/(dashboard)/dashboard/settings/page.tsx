@@ -30,7 +30,7 @@ export default async function CompanySettingsPage() {
           '[]'::json
         ) AS member_workspaces
       FROM company_member cm
-      JOIN "user" u ON u.id = cm.user_id
+      JOIN users u ON u.id = cm.user_id
       JOIN company_member my_cm ON my_cm.company_id = cm.company_id
       WHERE my_cm.user_id = ${session.user.id}
       ORDER BY u.name ASC
