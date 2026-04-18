@@ -3,6 +3,7 @@ import sql from "@/lib/db"
 import { redirect, notFound } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { WorkspaceSettingsForm } from "@/components/workspace/workspace-settings-form"
+import { WorkspaceDeleteSection } from "@/components/workspace/workspace-delete-section"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -23,6 +24,13 @@ export default async function WorkspaceSettingsPage({ params }: Props) {
 
   if (workspaces.length === 0) notFound()
   const workspace = workspaces[0]
+
+  const adminCheck = await sql`
+    SELECT id FROM company_member
+    WHERE user_id = ${session.user.id} AND role = 'admin'
+    LIMIT 1
+  `
+  const isAdmin = adminCheck.length > 0
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
@@ -45,19 +53,19 @@ export default async function WorkspaceSettingsPage({ params }: Props) {
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/30">
-        <CardHeader>
-          <CardTitle className="text-base text-destructive">Zona de Perigo</CardTitle>
-          <CardDescription>
-            Estas ações são irreversíveis. Tenha cuidado.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            A exclusão de workspace estará disponível em breve.
-          </p>
-        </CardContent>
-      </Card>
+      {isAdmin && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-base text-destructive">Zona de Perigo</CardTitle>
+            <CardDescription>
+              Estas ações são irreversíveis. Tenha cuidado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <WorkspaceDeleteSection workspace={workspace} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
