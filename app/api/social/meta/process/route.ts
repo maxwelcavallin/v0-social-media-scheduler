@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 4B: Business Manager — owned_pages, client_pages, user_owned_pages
+    // Step 4B: Business Manager — owned_pages, client_pages + page token via /{page_id}
     if (pages.length === 0) {
       console.log("[v0] meta/process step4B: tentando Business Manager")
       try {
@@ -176,6 +176,29 @@ export async function POST(request: NextRequest) {
             const clientData = await clientRes.json()
             console.log("[v0] meta/process step4B client_pages biz", biz.id, ":", clientData.data?.length ?? 0, "error:", clientData.error ? JSON.stringify(clientData.error) : "none")
             if (clientData.data?.length > 0) pages.push(...clientData.data)
+
+            // Para usuários do BM que não têm page token via /me/accounts,
+            // buscar o page token diretamente via /{page_id}?fields=access_token
+            // Isso funciona quando o usuário tem acesso via Business Manager mesmo sem ser admin pessoal da página.
+            const pagesWithoutToken = pages.filter((p: any) => !p.access_token)
+            for (const page of pagesWithoutToken) {
+              console.log("[v0] meta/process step4B: buscando page token para página BM", page.id)
+              try {
+                const ptRes = await fetch(
+                  `${GRAPH_API}/${page.id}?fields=access_token,instagram_business_account{id,name,username,profile_picture_url}&access_token=${userToken}`
+                )
+                const ptData = await ptRes.json()
+                console.log("[v0] meta/process step4B page token para", page.id, ":", !!ptData.access_token, "error:", ptData.error ? JSON.stringify(ptData.error) : "none")
+                if (ptData.access_token) {
+                  page.access_token = ptData.access_token
+                  if (ptData.instagram_business_account) {
+                    page.instagram_business_account = ptData.instagram_business_account
+                  }
+                }
+              } catch (e) {
+                console.log("[v0] meta/process step4B page token error:", e instanceof Error ? e.message : e)
+              }
+            }
           }
         }
       } catch (e) {
