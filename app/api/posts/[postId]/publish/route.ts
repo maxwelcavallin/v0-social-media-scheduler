@@ -42,12 +42,17 @@ export async function POST(
 
   // If accountIds provided, update post_targets
   if (accountIds && accountIds.length > 0) {
+    // Fetch existing post_type before deleting
+    const existingTargets = await sql`
+      SELECT post_type FROM post_targets WHERE post_id = ${postId} LIMIT 1
+    `
+    const postType = existingTargets[0]?.post_type ?? 'feed'
+
     await sql`DELETE FROM post_targets WHERE post_id = ${postId}`
     for (const accountId of accountIds) {
       await sql`
         INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
-        SELECT gen_random_uuid(), ${postId}, ${accountId}, COALESCE(post_type, 'feed'), 'pending', NOW()
-        FROM post_targets WHERE post_id = ${postId} LIMIT 1
+        VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType}, 'pending', NOW())
       `
     }
   }
