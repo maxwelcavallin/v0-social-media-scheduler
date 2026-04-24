@@ -88,20 +88,24 @@ export async function publishToInstagram(item: {
     : `${baseApi}/${account_id}/media_publish?access_token=${access_token}`
 
   // Helper: aguarda container atingir FINISHED ou ERROR
+  // Para tokens diretos do Instagram, usa graph.instagram.com; para page tokens, usa graph.facebook.com
   const pollContainer = async (containerId: string, maxWaitMs: number): Promise<void> => {
     const interval = 3000
     const maxAttempts = Math.ceil(maxWaitMs / interval)
+    // Sempre usar graph.instagram.com para status de container IG
+    const statusBase = isDirectIg ? GRAPH_IG : GRAPH_API
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, interval))
-      const statusRes = await fetch(
-        `${baseApi}/${containerId}?fields=status_code,status&access_token=${access_token}`
-      )
+      const pollUrl = `${statusBase}/${containerId}?fields=status_code,status&access_token=${access_token}`
+      const statusRes = await fetch(pollUrl)
       const statusData = await statusRes.json()
       const code: string = statusData.status_code ?? ""
+      console.log(`[v0] pollContainer attempt ${i + 1}/${maxAttempts} id=${containerId} status_code=${code} http=${statusRes.status}`)
       if (code === "FINISHED") return
       if (code === "ERROR") {
         throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
       }
+      // IN_PROGRESS ou vazio — continua aguardando
     }
     throw new Error(`Tempo esgotado aguardando processamento do container no Instagram`)
   }
@@ -142,7 +146,8 @@ export async function publishToInstagram(item: {
       body: JSON.stringify({ creation_id: containerData.id }),
     })
     const publishData = await publishRes.json()
-    if (publishData.error) throw new Error(publishData.error.message)
+    console.log("[v0] media_publish response:", JSON.stringify(publishData))
+    if (publishData.error) throw new Error(`media_publish error: ${publishData.error.message} [code ${publishData.error.code}]`)
     return publishData.id
   }
 
