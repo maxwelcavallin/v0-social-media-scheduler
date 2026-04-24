@@ -112,10 +112,23 @@ export async function POST(
 
     return NextResponse.json({ success: true, post_id: post.id, external_id: externalId })
   } catch (err: any) {
+    const message: string = err.message ?? "Erro desconhecido"
+
+    // Rate limit da API do Instagram/Facebook — não é falha do servidor
+    const isRateLimit = message.includes("Media Publish Limit") || message.includes("too many actions") || message.includes("code 9")
+
     await sql`
-      UPDATE posts SET status = 'failed', error_message = ${err.message}, updated_at = NOW()
+      UPDATE posts SET status = 'failed', error_message = ${message}, updated_at = NOW()
       WHERE id = ${post.id}
     `
-    return NextResponse.json({ error: err.message }, { status: 502 })
+    return NextResponse.json(
+      {
+        error: isRateLimit
+          ? "Limite de publicações da API do Instagram atingido. O Instagram permite até 25 posts por 24h via API. Tente novamente amanhã."
+          : message,
+        code: isRateLimit ? "RATE_LIMIT" : "PUBLISH_ERROR",
+      },
+      { status: isRateLimit ? 429 : 502 }
+    )
   }
 }

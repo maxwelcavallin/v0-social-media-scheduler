@@ -100,7 +100,6 @@ export async function publishToInstagram(item: {
       const statusRes = await fetch(pollUrl)
       const statusData = await statusRes.json()
       const code: string = statusData.status_code ?? ""
-      console.log(`[v0] pollContainer attempt ${i + 1}/${maxAttempts} id=${containerId} status_code=${code} http=${statusRes.status}`)
       if (code === "FINISHED") return
       if (code === "ERROR") {
         throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
@@ -146,7 +145,6 @@ export async function publishToInstagram(item: {
       body: JSON.stringify({ creation_id: containerData.id }),
     })
     const publishData = await publishRes.json()
-    console.log("[v0] media_publish response:", JSON.stringify(publishData))
     if (publishData.error) throw new Error(`media_publish error: ${publishData.error.message} [code ${publishData.error.code}]`)
     return publishData.id
   }
