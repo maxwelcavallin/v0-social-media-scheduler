@@ -342,6 +342,18 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
       setError("Selecione ao menos uma conta para publicar ou agendar.")
       return
     }
+
+    // Reels exigem obrigatoriamente um vídeo
+    if (data.postType === "reel") {
+      if (uploadedMedia.length === 0) {
+        setError("Reels exigem um arquivo de vídeo.")
+        return
+      }
+      if (uploadedMedia.some((m) => m.type !== "video")) {
+        setError("Reels só aceitam vídeo. Remova a imagem e envie um arquivo de vídeo.")
+        return
+      }
+    }
     setSubmitting(true)
     setError(null)
 

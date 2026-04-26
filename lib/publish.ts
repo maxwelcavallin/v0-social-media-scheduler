@@ -78,6 +78,11 @@ export async function publishToInstagram(item: {
 
   if (!media_urls || media_urls.length === 0) throw new Error("Instagram requer mídia")
 
+  // A API do Instagram não aceita imagem para Reels — exige obrigatoriamente vídeo
+  if (post_type === "reel" && media_types?.[0] !== "video") {
+    throw new Error("Reels no Instagram exigem um arquivo de vídeo. Imagens não são suportadas neste formato.")
+  }
+
   const isDirectIg = !page_id
   const baseApi = isDirectIg ? GRAPH_IG : GRAPH_API
   const mediaEndpoint = isDirectIg
