@@ -8,7 +8,7 @@ import { InstagramTestButton } from "@/components/accounts/instagram-test-button
 import { AccountAvatar } from "@/components/accounts/account-avatar"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
+import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle, RefreshCw } from "lucide-react"
 import { WebhookPanel } from "@/components/accounts/webhook-panel"
 
 interface Props {
@@ -79,6 +79,20 @@ export default async function AccountsPage({ params }: Props) {
         </div>
       </div>
 
+      {/* Banner de reconexão — contas conectadas antes de 27/04/2026 podem estar sem permissões necessárias */}
+      {accounts.length > 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Reconexão recomendada</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+              Adicionamos novas permissões necessárias para publicação. Se você estiver tendo erros ao publicar,
+              clique em <strong>Reconectar</strong> na conta afetada para atualizar as permissões.
+            </p>
+          </div>
+        </div>
+      )}
+
       {accounts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
           <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#833AB4] via-[#FD1D1D] to-[#F77737] flex items-center justify-center">
@@ -107,7 +121,7 @@ export default async function AccountsPage({ params }: Props) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {instagramAccounts.map((acc: any) => (
-                  <InstagramAccountCard key={acc.id} account={acc} isAdmin={isAdmin} />
+                  <InstagramAccountCard key={acc.id} account={acc} isAdmin={isAdmin} workspaceId={workspaceId} />
                 ))}
               </div>
             </div>
@@ -123,7 +137,7 @@ export default async function AccountsPage({ params }: Props) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {facebookAccounts.map((acc: any) => (
-                  <FacebookAccountCard key={acc.id} account={acc} />
+                  <FacebookAccountCard key={acc.id} account={acc} workspaceId={workspaceId} />
                 ))}
               </div>
             </div>
@@ -134,7 +148,22 @@ export default async function AccountsPage({ params }: Props) {
   )
 }
 
-function InstagramAccountCard({ account, isAdmin }: { account: any; isAdmin: boolean }) {
+function ReconnectButton({ workspaceId }: { workspaceId: string }) {
+  return (
+    <form action={`/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`} method="get" target="_blank">
+      <button
+        type="submit"
+        className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 hover:underline font-medium"
+        title="Reconectar para atualizar permissões"
+      >
+        <RefreshCw className="w-3 h-3" />
+        Reconectar
+      </button>
+    </form>
+  )
+}
+
+function InstagramAccountCard({ account, isAdmin, workspaceId }: { account: any; isAdmin: boolean; workspaceId: string }) {
   const token = getTokenStatus(account.token_expires_at)
 
   const borderColor =
@@ -196,6 +225,7 @@ function InstagramAccountCard({ account, isAdmin }: { account: any; isAdmin: boo
           {/* Actions */}
           <div className="shrink-0 flex flex-col items-end gap-1.5">
             <DisconnectAccountButton accountId={account.id} />
+            <ReconnectButton workspaceId={workspaceId} />
             {isAdmin && !account.page_id && (
               <InstagramTestButton
                 accountId={account.id}
@@ -211,7 +241,7 @@ function InstagramAccountCard({ account, isAdmin }: { account: any; isAdmin: boo
   )
 }
 
-function FacebookAccountCard({ account }: { account: any }) {
+function FacebookAccountCard({ account, workspaceId }: { account: any; workspaceId: string }) {
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardContent className="p-4">
@@ -233,7 +263,10 @@ function FacebookAccountCard({ account }: { account: any }) {
               <span className="text-xs text-emerald-600 font-medium">Ativo</span>
             </div>
           </div>
-          <DisconnectAccountButton accountId={account.id} />
+          <div className="shrink-0 flex flex-col items-end gap-1.5">
+            <DisconnectAccountButton accountId={account.id} />
+            <ReconnectButton workspaceId={workspaceId} />
+          </div>
         </div>
 
         <WebhookPanel accountId={account.id} />
