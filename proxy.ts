@@ -1,28 +1,66 @@
 import { NextRequest, NextResponse } from "next/server"
+import { jwtVerify } from "jose"
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "socialdog-secret-key-change-in-production"
+)
 
 const COOKIE_NAME = "socialdog_session"
 
-const protectedPaths = ["/dashboard", "/workspace", "/onboarding"]
-const authPaths = ["/login", "/register"]
+// Rotas públicas que não precisam de autenticação
+const PUBLIC_PATHS = ["/login", "/register", "/invite", "/api/auth", "/api/social/meta/callback"]
 
-export function proxy(request: NextRequest) {
+function isPublic(pathname: string) {
+  return PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const sessionCookie = request.cookies.get(COOKIE_NAME)?.value
 
-  const isProtected = protectedPaths.some((p) => pathname.startsWith(p))
-  const isAuthPath = authPaths.some((p) => pathname.startsWith(p))
-
-  if (isProtected && !sessionCookie) {
-    return NextResponse.redirect(new URL("/login", request.url))
+  // Ignora assets estáticos e rotas públicas
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    isPublic(pathname)
+  ) {
+    return NextResponse.next()
   }
 
-  if (isAuthPath && sessionCookie) {
-    return NextResponse.redirect(new URL("/dashboard", request.url))
+  const token = request.cookies.get(COOKIE_NAME)?.value
+
+  // Sem token — redireciona para login
+  if (!token) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 })
+    }
+    const loginUrl = new URL("/login", request.url)
+    loginUrl.searchParams.set("next", pathname)
+    return NextResponse.redirect(loginUrl)
   }
 
-  return NextResponse.next()
+  // Token inválido ou expirado — redireciona para login
+  try {
+    await jwtVerify(token, JWT_SECRET)
+    return NextResponse.next()
+  } catch {
+    // Limpa o cookie expirado
+    const response = pathname.startsWith("/api/")
+      ? NextResponse.json({ error: "Sessão expirada" }, { status: 401 })
+      : NextResponse.redirect(new URL("/login", request.url))
+
+    response.cookies.delete(COOKIE_NAME)
+    return response
+  }
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|public).*)"],
+  matcher: [
+    /*
+     * Intercepta todas as rotas exceto:
+     * - _next/static (arquivos estáticos)
+     * - _next/image (otimização de imagens)
+     * - favicon.ico
+     */
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+  ],
 }
