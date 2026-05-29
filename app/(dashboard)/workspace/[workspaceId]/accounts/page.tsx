@@ -5,7 +5,6 @@ import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-
 import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
 import { InstagramTestButton } from "@/components/accounts/instagram-test-button"
-import { AccountAvatar } from "@/components/accounts/account-avatar"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle, RefreshCw } from "lucide-react"
@@ -185,16 +184,10 @@ function InstagramAccountCard({ account, isAdmin, workspaceId }: { account: any;
     <Card className={`hover:shadow-md transition-shadow ${borderColor}`}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          {/* Avatar */}
+          {/* Avatar — usa apenas o ícone do Instagram, sem foto de perfil */}
           <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#833AB4] to-[#F77737] p-[2px]">
-              <div className="w-full h-full rounded-full bg-background overflow-hidden">
-                <AccountAvatar
-                  src={account.profile_picture_url}
-                  alt={account.account_name}
-                  fallback={<Instagram className="w-5 h-5 text-[#C13584]" />}
-                />
-              </div>
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#833AB4] via-[#FD1D1D] to-[#F77737] flex items-center justify-center">
+              <Instagram className="w-5 h-5 text-white" />
             </div>
             {account.is_active && token.variant !== "expired" && (
               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-background" />
@@ -246,12 +239,8 @@ function FacebookAccountCard({ account, workspaceId }: { account: any; workspace
     <Card className="hover:shadow-md transition-shadow">
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-            <AccountAvatar
-              src={account.profile_picture_url}
-              alt={account.account_name}
-              fallback={<Facebook className="w-5 h-5 text-blue-600" />}
-            />
+          <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
+            <Facebook className="w-5 h-5 text-blue-600" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground truncate">{account.account_name}</p>

@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useState } from "react"
 import {
@@ -112,7 +111,7 @@ export function DashboardSidebar({ workspaces, user, plan = "free", company, isS
         {/* Logo */}
         <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <Image src="/logo-dog.png" alt="SocialDog" width={28} height={28} className="rounded-lg" />
+            <img src="/logo-dog.png" alt="SocialDog" width={28} height={28} className="rounded-lg object-contain" />
             <span className="font-bold text-base text-sidebar-foreground">SocialDog</span>
           </Link>
         </div>
