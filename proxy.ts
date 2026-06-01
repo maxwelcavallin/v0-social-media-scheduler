@@ -7,8 +7,17 @@ const JWT_SECRET = new TextEncoder().encode(
 
 const COOKIE_NAME = "socialdog_session"
 
-// Rotas públicas que não precisam de autenticação
-const PUBLIC_PATHS = ["/login", "/register", "/invite", "/api/auth", "/api/social/meta/callback"]
+// Rotas públicas que não precisam de autenticação via cookie de sessão
+// (rotas de API com autenticação própria via CRON_SECRET / QUEUE_SECRET devem estar aqui)
+const PUBLIC_PATHS = [
+  "/login",
+  "/register",
+  "/invite",
+  "/api/auth",
+  "/api/social/meta/callback",
+  "/api/queue/process",   // chamado pelo Vercel Cron — usa Authorization: Bearer <CRON_SECRET>
+  "/api/webhook/",        // chamado pelo scheduler interno — usa x-queue-secret
+]
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname.startsWith(p))
