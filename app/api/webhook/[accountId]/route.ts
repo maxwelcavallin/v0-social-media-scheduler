@@ -114,8 +114,16 @@ export async function POST(
   } catch (err: any) {
     const message: string = err.message ?? "Erro desconhecido"
 
-    // Rate limit da API do Instagram/Facebook — não é falha do servidor
     const isRateLimit = message.includes("Media Publish Limit") || message.includes("too many actions") || message.includes("code 9")
+    // Erro 190: token sem permissões suficientes — conta precisa ser reconectada
+    const isPermissionError = message.includes("190") || message.includes("impersonating a user's page") || message.includes("pages_read_engagement")
+
+    if (isPermissionError) {
+      await sql`
+        UPDATE social_accounts SET needs_reconnect = true, updated_at = NOW()
+        WHERE id = ${accountId}
+      `
+    }
 
     await sql`
       UPDATE posts SET status = 'failed', error_message = ${message}, updated_at = NOW()
@@ -123,12 +131,14 @@ export async function POST(
     `
     return NextResponse.json(
       {
-        error: isRateLimit
+        error: isPermissionError
+          ? "Permissões insuficientes. Reconecte a conta nas configurações do workspace para atualizar o token."
+          : isRateLimit
           ? "Limite de publicações da API do Instagram atingido. O Instagram permite até 25 posts por 24h via API. Tente novamente amanhã."
           : message,
-        code: isRateLimit ? "RATE_LIMIT" : "PUBLISH_ERROR",
+        code: isPermissionError ? "NEEDS_RECONNECT" : isRateLimit ? "RATE_LIMIT" : "PUBLISH_ERROR",
       },
-      { status: isRateLimit ? 429 : 502 }
+      { status: isPermissionError ? 403 : isRateLimit ? 429 : 502 }
     )
   }
 }

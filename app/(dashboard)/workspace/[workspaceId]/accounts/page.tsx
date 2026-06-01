@@ -43,7 +43,7 @@ export default async function AccountsPage({ params }: Props) {
     `,
     sql`
       SELECT id, platform, account_name, account_username, profile_picture_url,
-             is_active, last_sync_at, created_at, token_expires_at, page_id
+             is_active, last_sync_at, created_at, token_expires_at, page_id, needs_reconnect
       FROM social_accounts
       WHERE workspace_id = ${workspaceId}
       ORDER BY platform, created_at ASC
@@ -78,19 +78,6 @@ export default async function AccountsPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Banner de reconexão — contas conectadas antes de 27/04/2026 podem estar sem permissões necessárias */}
-      {accounts.length > 0 && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-          <div className="flex flex-col gap-0.5">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Reconexão recomendada</p>
-            <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-              Adicionamos novas permissões necessárias para publicação. Se você estiver tendo erros ao publicar,
-              clique em <strong>Reconectar</strong> na conta afetada para atualizar as permissões.
-            </p>
-          </div>
-        </div>
-      )}
 
       {accounts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
@@ -228,6 +215,15 @@ function InstagramAccountCard({ account, isAdmin, workspaceId }: { account: any;
           </div>
         </div>
 
+        {account.needs_reconnect && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-800 px-3 py-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
+              Reconexão necessária. Esta conta falhou ao publicar por falta de permissões. Clique em <strong>Reconectar</strong> para corrigir.
+            </p>
+          </div>
+        )}
+
         <WebhookPanel accountId={account.id} />
       </CardContent>
     </Card>
@@ -258,7 +254,16 @@ function FacebookAccountCard({ account, workspaceId }: { account: any; workspace
           </div>
         </div>
 
-        <WebhookPanel accountId={account.id} />
+          {account.needs_reconnect && (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-800 px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
+                Reconexão necessária. Esta conta falhou ao publicar por falta de permissões. Clique em <strong>Reconectar</strong> para corrigir.
+              </p>
+            </div>
+          )}
+
+          <WebhookPanel accountId={account.id} />
       </CardContent>
     </Card>
   )

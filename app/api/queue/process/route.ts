@@ -116,6 +116,16 @@ async function processQueue() {
       } catch (err: any) {
         const errMsg = err?.message || String(err)
         errors.push(`${target.platform}: ${errMsg}`)
+
+        // Erro 190: token sem permissões — marcar conta para reconexão obrigatória
+        const isPermissionError = errMsg.includes("190") || errMsg.includes("impersonating a user's page") || errMsg.includes("pages_read_engagement")
+        if (isPermissionError) {
+          await sql`
+            UPDATE social_accounts SET needs_reconnect = true, updated_at = NOW()
+            WHERE account_id = ${target.account_id} AND platform = ${target.platform}
+          `
+        }
+
         await sql`
           UPDATE post_targets
           SET status = 'failed', error_message = ${errMsg}

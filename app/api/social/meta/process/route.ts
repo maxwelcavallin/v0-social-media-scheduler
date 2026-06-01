@@ -35,6 +35,7 @@ async function upsertAccount(fields: {
       profile_picture_url = EXCLUDED.profile_picture_url,
       page_id             = EXCLUDED.page_id,
       is_active           = true,
+      needs_reconnect     = false,
       updated_at          = NOW(),
       last_sync_at        = NOW()
   `
