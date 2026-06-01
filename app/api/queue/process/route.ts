@@ -47,7 +47,7 @@ async function processQueue() {
       AND pq.attempts < pq.max_attempts
     GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts, p.content, p.workspace_id
     -- cover_url is derived from MAX aggregate, no need in GROUP BY
-    LIMIT 10
+    LIMIT 3
   `
 
   if (pendingItems.length === 0) {

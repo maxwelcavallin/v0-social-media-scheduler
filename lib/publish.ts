@@ -92,16 +92,18 @@ export async function publishToInstagram(item: {
     ? `${baseApi}/me/media_publish?access_token=${access_token}`
     : `${baseApi}/${account_id}/media_publish?access_token=${access_token}`
 
-  // Helper: aguarda container atingir FINISHED ou ERROR
-  // Para tokens diretos do Instagram, usa graph.instagram.com; para page tokens, usa graph.facebook.com
+  // Helper: aguarda container atingir FINISHED ou ERROR com backoff exponencial
+  // Usa graph.instagram.com para tokens diretos, graph.facebook.com para page tokens
   const pollContainer = async (containerId: string, maxWaitMs: number): Promise<void> => {
-    const interval = 3000
-    const maxAttempts = Math.ceil(maxWaitMs / interval)
-    // Sempre usar graph.instagram.com para status de container IG
     const statusBase = isDirectIg ? GRAPH_IG : GRAPH_API
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, interval))
-      const pollUrl = `${statusBase}/${containerId}?fields=status_code,status&access_token=${access_token}`
+    const pollUrl = `${statusBase}/${containerId}?fields=status_code,status&access_token=${access_token}`
+    const deadline = Date.now() + maxWaitMs
+
+    // Aguarda 4s fixo antes da primeira verificação (mínimo recomendado pelo Instagram)
+    await new Promise((r) => setTimeout(r, 4000))
+
+    let interval = 3000 // começa com 3s, aumenta progressivamente
+    while (Date.now() < deadline) {
       const statusRes = await fetch(pollUrl)
       const statusData = await statusRes.json()
       const code: string = statusData.status_code ?? ""
@@ -109,7 +111,9 @@ export async function publishToInstagram(item: {
       if (code === "ERROR") {
         throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
       }
-      // IN_PROGRESS ou vazio — continua aguardando
+      // IN_PROGRESS ou vazio — aguarda com backoff (máx 8s entre tentativas)
+      await new Promise((r) => setTimeout(r, interval))
+      interval = Math.min(interval + 2000, 8000)
     }
     throw new Error(`Tempo esgotado aguardando processamento do container no Instagram`)
   }
@@ -141,8 +145,8 @@ export async function publishToInstagram(item: {
       throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
     }
 
-    // Vídeos/Reels precisam de mais tempo para processar
-    await pollContainer(containerData.id, isVideo ? 90_000 : 30_000)
+    // Imagens: até 60s | Vídeos/Reels: até 120s
+    await pollContainer(containerData.id, isVideo ? 120_000 : 60_000)
 
     const publishRes = await fetch(publishEndpoint, {
       method: "POST",
@@ -179,7 +183,7 @@ export async function publishToInstagram(item: {
   const carouselData = await carouselRes.json()
   if (carouselData.error) throw new Error(carouselData.error.message)
 
-  await pollContainer(carouselData.id, 60_000)
+  await pollContainer(carouselData.id, 90_000)
 
   const publishRes = await fetch(publishEndpoint, {
     method: "POST",
