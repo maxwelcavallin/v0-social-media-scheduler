@@ -17,6 +17,8 @@ const PUBLIC_PATHS = [
   "/api/social/meta/callback",
   "/api/queue/process",   // chamado pelo Vercel Cron — usa Authorization: Bearer <CRON_SECRET>
   "/api/webhook/",        // chamado pelo scheduler interno — usa x-queue-secret
+  "/review/",             // links de revisão de conteúdo — acesso público via token na URL
+  "/api/review/",         // API dos links de revisão — autenticação via token da URL
 ]
 
 function isPublic(pathname: string) {
