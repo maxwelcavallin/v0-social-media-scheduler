@@ -28,9 +28,9 @@ const postTypeIcons: Record<string, React.ReactNode> = {
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; className?: string }> = {
   draft: { label: "Rascunho", variant: "outline" },
-  scheduled: { label: "Agendado", variant: "secondary", className: "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800" },
+  scheduled:  { label: "Agendado",   variant: "secondary", className: "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800" },
   publishing: { label: "Publicando", variant: "secondary", className: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800" },
-  published: { label: "Publicado", variant: "default" },
+  published:  { label: "Publicado",  variant: "default" },
   failed: { label: "Falhou", variant: "destructive" },
   in_review: { label: "Em revisão", variant: "secondary", className: "bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-800" },
   approved: { label: "Aprovado", variant: "secondary", className: "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800" },

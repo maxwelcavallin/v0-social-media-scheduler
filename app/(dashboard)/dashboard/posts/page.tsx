@@ -27,6 +27,7 @@ const validStatuses = [...postStatuses, ...reviewStatuses]
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; className?: string }> = {
   draft:         { label: "Rascunho",   variant: "outline" },
   scheduled:     { label: "Agendado",   variant: "secondary" },
+  publishing:    { label: "Publicando", variant: "secondary", className: "bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800" },
   published:     { label: "Publicado",  variant: "default" },
   failed:        { label: "Falhou",     variant: "destructive" },
   in_review:     { label: "Em revisão", variant: "outline", className: "border-blue-400 text-blue-600 dark:text-blue-400" },

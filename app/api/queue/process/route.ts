@@ -124,11 +124,12 @@ async function processQueue() {
       }
     }
 
-    const allFailed = errors.length > 0 && errors.length === targets.length
+    const allSucceeded = errors.length === 0
+    const allFailed = errors.length === targets.length
     const maxReached = item.attempts >= item.max_attempts
 
-    if (errors.length === 0) {
-      // All targets succeeded — mark queue done and post published with timestamp
+    if (allSucceeded) {
+      // Todos os targets confirmados pela API — marca como publicado
       await sql`
         UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${item.queue_id}
       `
@@ -136,7 +137,7 @@ async function processQueue() {
         UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW() WHERE id = ${item.post_id}
       `
     } else if (allFailed && maxReached) {
-      // All failed, no retries left
+      // Todos falharam e sem tentativas restantes
       await sql`
         UPDATE post_queue SET status = 'failed', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}
       `
@@ -144,7 +145,7 @@ async function processQueue() {
         UPDATE posts SET status = 'failed', error_message = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.post_id}
       `
     } else if (allFailed) {
-      // All failed but retries remain — reset to pending for next cron run
+      // Todos falharam mas ainda há tentativas — reagenda para o próximo cron
       await sql`
         UPDATE post_queue SET status = 'pending', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}
       `
@@ -152,12 +153,14 @@ async function processQueue() {
         UPDATE posts SET status = 'scheduled', updated_at = NOW() WHERE id = ${item.post_id}
       `
     } else {
-      // Partial success — mark done and published
+      // Sucesso parcial: alguns targets publicados, outros falharam.
+      // Não marca como publicado — mantém como falha parcial para o usuário saber.
+      const partialError = `Publicação parcial — falhas: ${errors.join("; ")}`
       await sql`
-        UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${item.queue_id}
+        UPDATE post_queue SET status = 'failed', last_error = ${partialError}, updated_at = NOW() WHERE id = ${item.queue_id}
       `
       await sql`
-        UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW() WHERE id = ${item.post_id}
+        UPDATE posts SET status = 'failed', error_message = ${partialError}, updated_at = NOW() WHERE id = ${item.post_id}
       `
     }
 
