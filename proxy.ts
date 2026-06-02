@@ -19,6 +19,7 @@ const PUBLIC_PATHS = [
   "/api/webhook/",        // chamado pelo scheduler interno — usa x-queue-secret
   "/review/",             // links de revisão de conteúdo — acesso público via token na URL
   "/api/review/",         // API dos links de revisão — autenticação via token da URL
+  "/api/mcp/",            // servidor MCP — autenticação interna via Bearer Token
 ]
 
 function isPublic(pathname: string) {

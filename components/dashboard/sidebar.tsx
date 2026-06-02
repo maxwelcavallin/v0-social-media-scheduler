@@ -15,6 +15,7 @@ import {
   Zap,
   Shield,
   Mic,
+  Plug2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -77,6 +78,7 @@ const workspaceNavItems = (workspaceId: string) => [
   { href: `/workspace/${workspaceId}/calendar`, label: "Calendário", icon: CalendarDays },
   { href: `/workspace/${workspaceId}/posts`, label: "Posts", icon: ImageIcon },
   { href: `/workspace/${workspaceId}/accounts`, label: "Contas", icon: Link2 },
+  { href: `/workspace/${workspaceId}/integrations`, label: "Integrações", icon: Plug2 },
   { href: `/workspace/${workspaceId}/settings`, label: "Configurações", icon: Settings },
 ]
 
