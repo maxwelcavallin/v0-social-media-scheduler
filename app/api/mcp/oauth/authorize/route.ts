@@ -143,5 +143,12 @@ export async function POST(req: NextRequest) {
   redirectUrl.searchParams.set("code", code)
   if (state) redirectUrl.searchParams.set("state", state)
 
-  return NextResponse.redirect(redirectUrl.toString())
+  // Usa HTML com window.location para garantir GET no callback (evita que o browser reenvie como POST em alguns casos)
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<script>window.location.replace(${JSON.stringify(redirectUrl.toString())})</script>
+</head><body>Redirecionando...</body></html>`
+  return new Response(html, {
+    status: 200,
+    headers: { "Content-Type": "text/html" },
+  })
 }
