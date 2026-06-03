@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server"
 import sql from "@/lib/db"
 import crypto from "crypto"
 
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS })
+}
+
 // RFC 6749 Token Endpoint — troca authorization_code por access_token
 export async function POST(req: NextRequest) {
   let body: Record<string, string>
@@ -71,9 +81,8 @@ export async function POST(req: NextRequest) {
   // Atualiza last_used_at
   await sql`UPDATE mcp_tokens SET last_used_at = NOW() WHERE token = ${accessToken}`
 
-  return NextResponse.json({
-    access_token: accessToken,
-    token_type: "Bearer",
-    scope: "mcp",
-  })
+  return NextResponse.json(
+    { access_token: accessToken, token_type: "Bearer", scope: "mcp" },
+    { headers: CORS }
+  )
 }

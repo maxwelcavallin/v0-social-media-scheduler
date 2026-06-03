@@ -4,6 +4,19 @@ import sql from "@/lib/db"
 
 export const maxDuration = 60
 
+const BASE = process.env.NEXT_PUBLIC_APP_URL ?? "https://social.list.dog"
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Session-Id",
+  "Access-Control-Expose-Headers": "Mcp-Session-Id",
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS })
+}
+
 // ---------------------------------------------------------------------------
 // Tipos internos
 // ---------------------------------------------------------------------------
@@ -312,14 +325,21 @@ export async function POST(
   const { organizationId } = await params
   const ctx = await validateMcpToken(req.headers.get("authorization"))
   if (!ctx || ctx.organizationId !== organizationId) {
-    return NextResponse.json({ error: "Bearer Token inválido ou sem permissão para este workspace." }, { status: 401 })
+    return NextResponse.json(
+      { error: "Bearer Token inválido ou sem permissão para este workspace." },
+      {
+        status: 401,
+        headers: {
+          ...CORS,
+          "WWW-Authenticate": `Bearer realm="${BASE}/api/mcp/${organizationId}", resource_metadata="${BASE}/.well-known/oauth-authorization-server"`,
+        },
+      }
+    )
   }
 
   const body: McpRequest = await req.json()
-
-  // Streamable HTTP: responde com JSON simples
   const response = await handleMcpRequest(body, organizationId)
-  return NextResponse.json(response)
+  return NextResponse.json(response, { headers: CORS })
 }
 
 export async function GET(
@@ -329,17 +349,21 @@ export async function GET(
   const { organizationId } = await params
   const ctx = await validateMcpToken(req.headers.get("authorization"))
   if (!ctx || ctx.organizationId !== organizationId) {
-    return new Response("Bearer Token inválido.", { status: 401 })
+    return new Response("Bearer Token inválido.", {
+      status: 401,
+      headers: {
+        ...CORS,
+        "WWW-Authenticate": `Bearer realm="${BASE}/api/mcp/${organizationId}", resource_metadata="${BASE}/.well-known/oauth-authorization-server"`,
+      },
+    })
   }
 
   // Fallback SSE — mantém conexão e responde a mensagens via POST
   const stream = new ReadableStream({
     start(controller) {
       const encoder = new TextEncoder()
-      // Envia endpoint de mensagens
       const postUrl = `${new URL(req.url).origin}/api/mcp/${organizationId}`
       controller.enqueue(encoder.encode(`event: endpoint\ndata: ${postUrl}\n\n`))
-      // Keepalive a cada 25s
       const interval = setInterval(() => {
         try { controller.enqueue(encoder.encode(": keepalive\n\n")) } catch { clearInterval(interval) }
       }, 25_000)
@@ -349,6 +373,7 @@ export async function GET(
 
   return new Response(stream, {
     headers: {
+      ...CORS,
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
