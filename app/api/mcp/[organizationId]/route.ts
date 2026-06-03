@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateMcpToken } from "@/lib/mcp-auth"
+import { uploadMcpMedia, type McpMediaInput } from "@/lib/mcp-media"
 import sql from "@/lib/db"
 
 export const maxDuration = 60
@@ -60,7 +61,7 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "criar_post",
-    description: "Cria um post em rascunho para uma ou mais contas com permissão MCP ativada.",
+    description: "Cria um post em rascunho para uma ou mais contas com permissão MCP ativada. Suporta imagens e vídeos.",
     inputSchema: {
       type: "object",
       properties: {
@@ -69,6 +70,20 @@ const TOOLS: McpTool[] = [
           type: "array",
           items: { type: "string" },
           description: "IDs das contas onde publicar (devem ter mcp_allowed = true).",
+        },
+        media: {
+          type: "array",
+          description: "Mídias do post (opcional). Máx 10 itens para carrossel.",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["image", "video"], description: "Tipo da mídia." },
+              url: { type: "string", description: "URL pública da mídia (Opção A — recomendada)." },
+              media_type: { type: "string", description: "MIME type: image/jpeg, image/png, image/webp, video/mp4 (Opção B — base64)." },
+              data: { type: "string", description: "Conteúdo em base64 (Opção B)." },
+            },
+            required: ["type"],
+          },
         },
       },
       required: ["content", "account_ids"],
@@ -76,16 +91,30 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "agendar_post",
-    description: "Cria e agenda um post para uma data/hora específica (ISO 8601, horário de Brasília).",
+    description: "Cria e agenda um post para uma data/hora específica (ISO 8601, horário de Brasília). Suporta imagens e vídeos.",
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string", description: "Texto do post." },
-        scheduled_at: { type: "string", description: "Data e hora ISO 8601, ex: 2025-06-10T14:30:00-03:00" },
+        scheduled_at: { type: "string", description: "Data e hora ISO 8601, ex: 2026-06-10T14:30:00-03:00" },
         account_ids: {
           type: "array",
           items: { type: "string" },
           description: "IDs das contas onde publicar (devem ter mcp_allowed = true).",
+        },
+        media: {
+          type: "array",
+          description: "Mídias do post (opcional). Máx 10 itens para carrossel.",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["image", "video"] },
+              url: { type: "string", description: "URL pública da mídia (recomendado)." },
+              media_type: { type: "string" },
+              data: { type: "string" },
+            },
+            required: ["type"],
+          },
         },
       },
       required: ["content", "scheduled_at", "account_ids"],
@@ -93,7 +122,7 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "publicar_agora",
-    description: "Publica imediatamente um post em uma ou mais contas com permissão MCP ativada.",
+    description: "Publica imediatamente um post em uma ou mais contas com permissão MCP ativada. Suporta imagens e vídeos.",
     inputSchema: {
       type: "object",
       properties: {
@@ -103,11 +132,41 @@ const TOOLS: McpTool[] = [
           items: { type: "string" },
           description: "IDs das contas onde publicar (devem ter mcp_allowed = true).",
         },
+        media: {
+          type: "array",
+          description: "Mídias do post (opcional). Máx 10 itens para carrossel.",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["image", "video"] },
+              url: { type: "string", description: "URL pública da mídia (recomendado)." },
+              media_type: { type: "string" },
+              data: { type: "string" },
+            },
+            required: ["type"],
+          },
+        },
       },
       required: ["content", "account_ids"],
     },
   },
 ]
+
+// ---------------------------------------------------------------------------
+// Helper: faz upload das mídias e insere em post_media
+// ---------------------------------------------------------------------------
+async function saveMedia(mediaInput: McpMediaInput[], postId: string): Promise<void> {
+  if (!mediaInput.length) return
+  if (mediaInput.length > 10) throw new Error("Máximo de 10 mídias por post.")
+
+  for (let i = 0; i < mediaInput.length; i++) {
+    const resolved = await uploadMcpMedia(mediaInput[i], postId, i)
+    await sql`
+      INSERT INTO post_media (id, post_id, url, media_type, order_index, created_at)
+      VALUES (gen_random_uuid(), ${postId}, ${resolved.url}, ${resolved.media_type}, ${i}, NOW())
+    `
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Execução das ferramentas
@@ -173,6 +232,7 @@ async function executeTool(
     case "criar_post": {
       const content = args.content as string
       const account_ids = args.account_ids as string[]
+      const mediaInput = (args.media ?? []) as McpMediaInput[]
 
       const post = await sql`
         INSERT INTO posts (workspace_id, content, status, created_by, created_at, updated_at)
@@ -181,19 +241,27 @@ async function executeTool(
       `
       const postId = post[0].id
 
+      if (mediaInput.length > 0) await saveMedia(mediaInput, postId)
+
       for (const accountId of account_ids) {
         await sql`
           INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
           VALUES (gen_random_uuid(), ${postId}, ${accountId}, 'feed', 'pending', NOW())
         `
       }
-      return { post_id: postId, status: "draft", message: "Post criado como rascunho com sucesso." }
+      return {
+        post_id: postId,
+        status: "draft",
+        media_count: mediaInput.length,
+        message: `Post criado como rascunho com sucesso${mediaInput.length ? ` (${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""})` : ""}.`,
+      }
     }
 
     case "agendar_post": {
       const content = args.content as string
       const scheduled_at = args.scheduled_at as string
       const account_ids = args.account_ids as string[]
+      const mediaInput = (args.media ?? []) as McpMediaInput[]
 
       const scheduledDate = new Date(scheduled_at)
       if (isNaN(scheduledDate.getTime())) throw new Error("scheduled_at inválido. Use formato ISO 8601.")
@@ -205,6 +273,8 @@ async function executeTool(
         RETURNING id
       `
       const postId = post[0].id
+
+      if (mediaInput.length > 0) await saveMedia(mediaInput, postId)
 
       for (const accountId of account_ids) {
         await sql`
@@ -220,13 +290,15 @@ async function executeTool(
         post_id: postId,
         status: "scheduled",
         scheduled_at: scheduledDate.toISOString(),
-        message: "Post agendado com sucesso.",
+        media_count: mediaInput.length,
+        message: `Post agendado com sucesso para ${scheduledDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}.`,
       }
     }
 
     case "publicar_agora": {
       const content = args.content as string
       const account_ids = args.account_ids as string[]
+      const mediaInput = (args.media ?? []) as McpMediaInput[]
 
       const post = await sql`
         INSERT INTO posts (workspace_id, content, status, created_by, created_at, updated_at)
@@ -234,6 +306,8 @@ async function executeTool(
         RETURNING id
       `
       const postId = post[0].id
+
+      if (mediaInput.length > 0) await saveMedia(mediaInput, postId)
 
       for (const accountId of account_ids) {
         await sql`
@@ -249,7 +323,8 @@ async function executeTool(
       return {
         post_id: postId,
         status: "publishing",
-        message: "Post enviado para publicação imediata. Será processado em instantes.",
+        media_count: mediaInput.length,
+        message: `Post enviado para publicação imediata${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}. Será processado em instantes.`,
       }
     }
 
