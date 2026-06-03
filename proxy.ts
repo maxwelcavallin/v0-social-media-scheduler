@@ -20,6 +20,7 @@ const PUBLIC_PATHS = [
   "/review/",             // links de revisão de conteúdo — acesso público via token na URL
   "/api/review/",         // API dos links de revisão — autenticação via token da URL
   "/api/mcp/",            // servidor MCP — autenticação interna via Bearer Token
+  "/.well-known/",        // OAuth discovery endpoints (RFC 8414)
 ]
 
 function isPublic(pathname: string) {

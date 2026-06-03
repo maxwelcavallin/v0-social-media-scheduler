@@ -74,7 +74,9 @@ export function McpIntegrationClient({
   const [isPending, startTransition] = useTransition()
   const [switchLoading, setSwitchLoading] = useState<string | null>(null)
 
-  const mcpUrl = `${typeof window !== "undefined" ? window.location.origin : "https://social.list.dog"}/api/mcp/${orgId}`
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://social.list.dog"
+  // URL do servidor MCP — o workspace é identificado via OAuth, não pela URL
+  const mcpUrl = `${origin}/api/mcp/${orgId}`
 
   // Carrega dados ao trocar de workspace
   const handleOrgChange = useCallback(async (newOrgId: string) => {
@@ -197,7 +199,7 @@ export function McpIntegrationClient({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Protocolo: <strong>Streamable HTTP</strong> (com fallback SSE). Transport type: <code className="bg-muted px-1 rounded text-xs">http</code>.
+              Protocolo: <strong>Streamable HTTP</strong> com <strong>OAuth 2.0</strong>. Ao adicionar no Claude.ai, ele iniciará o fluxo de autorização automaticamente.
             </p>
           </div>
 
