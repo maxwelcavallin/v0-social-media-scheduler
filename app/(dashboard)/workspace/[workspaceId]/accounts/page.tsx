@@ -7,8 +7,9 @@ import { DisconnectAccountButton } from "@/components/accounts/disconnect-accoun
 import { InstagramTestButton } from "@/components/accounts/instagram-test-button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle, RefreshCw } from "lucide-react"
+import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
 import { WebhookPanel } from "@/components/accounts/webhook-panel"
+import { ReconnectAccountButton } from "@/components/accounts/reconnect-account-button"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -134,21 +135,6 @@ export default async function AccountsPage({ params }: Props) {
   )
 }
 
-function ReconnectButton({ workspaceId }: { workspaceId: string }) {
-  return (
-    <a
-      href={`/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 hover:underline font-medium"
-      title="Reconectar para atualizar permissões"
-    >
-      <RefreshCw className="w-3 h-3" />
-      Reconectar
-    </a>
-  )
-}
-
 function InstagramAccountCard({ account, isAdmin, workspaceId }: { account: any; isAdmin: boolean; workspaceId: string }) {
   const token = getTokenStatus(account.token_expires_at)
 
@@ -205,7 +191,7 @@ function InstagramAccountCard({ account, isAdmin, workspaceId }: { account: any;
           {/* Actions */}
           <div className="shrink-0 flex flex-col items-end gap-1.5">
             <DisconnectAccountButton accountId={account.id} />
-            <ReconnectButton workspaceId={workspaceId} />
+            {account.needs_reconnect && <ReconnectAccountButton platform="instagram" workspaceId={workspaceId} />}
             {isAdmin && !account.page_id && (
               <InstagramTestButton
                 accountId={account.id}
@@ -250,7 +236,7 @@ function FacebookAccountCard({ account, workspaceId }: { account: any; workspace
           </div>
           <div className="shrink-0 flex flex-col items-end gap-1.5">
             <DisconnectAccountButton accountId={account.id} />
-            <ReconnectButton workspaceId={workspaceId} />
+            {account.needs_reconnect && <ReconnectAccountButton platform="facebook" workspaceId={workspaceId} />}
           </div>
         </div>
 
