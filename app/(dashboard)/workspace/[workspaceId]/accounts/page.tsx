@@ -136,16 +136,16 @@ export default async function AccountsPage({ params }: Props) {
 
 function ReconnectButton({ workspaceId }: { workspaceId: string }) {
   return (
-    <form action={`/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`} method="get" target="_blank">
-      <button
-        type="submit"
-        className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 hover:underline font-medium"
-        title="Reconectar para atualizar permissões"
-      >
-        <RefreshCw className="w-3 h-3" />
-        Reconectar
-      </button>
-    </form>
+    <a
+      href={`/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 hover:underline font-medium"
+      title="Reconectar para atualizar permissões"
+    >
+      <RefreshCw className="w-3 h-3" />
+      Reconectar
+    </a>
   )
 }
 
