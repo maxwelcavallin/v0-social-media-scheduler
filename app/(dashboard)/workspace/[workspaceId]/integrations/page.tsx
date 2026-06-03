@@ -22,8 +22,8 @@ export default async function IntegrationsPage({ params }: PageProps) {
   const organizations = await sql`
     SELECT o.id, o.name, o.slug
     FROM organization o
-    INNER JOIN member m ON m."organizationId" = o.id
-    WHERE m."userId" = ${session.user.id}
+    INNER JOIN member m ON m.organization_id = o.id
+    WHERE m.user_id = ${session.user.id}
     ORDER BY o.name
   `
 
