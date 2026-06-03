@@ -202,10 +202,10 @@ function FeedPost({ post, media, onExpand }: { post: ReviewPost; media: PostMedi
         <MoreHorizontal className="w-5 h-5 text-[#262626]" />
       </div>
 
-      {/* Media */}
+      {/* Media — proporção 4:5 (feed portrait padrão do Instagram) */}
       <div
         className="relative bg-black cursor-pointer"
-        style={{ aspectRatio: "1/1" }}
+        style={{ aspectRatio: "4/5" }}
         onClick={() => current && onExpand(idx)}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
