@@ -150,6 +150,44 @@ const TOOLS: McpTool[] = [
       required: ["content", "account_ids"],
     },
   },
+  {
+    name: "editar_post",
+    description: "Edita o conteúdo ou a data de agendamento de um post que ainda não foi publicado (status draft ou scheduled). Use para corrigir erros antes da publicação.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        post_id: { type: "string", description: "ID do post a editar." },
+        content: { type: "string", description: "Novo texto do post (opcional — omita para manter o atual)." },
+        scheduled_at: {
+          type: "string",
+          description: "Nova data/hora de agendamento ISO 8601 (opcional — omita para manter a atual). Apenas para posts com status scheduled.",
+        },
+      },
+      required: ["post_id"],
+    },
+  },
+  {
+    name: "cancelar_agendamento",
+    description: "Cancela o agendamento de um post (muda status de scheduled para draft e remove da fila). Use para desfazer um agendar_post feito por engano.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        post_id: { type: "string", description: "ID do post agendado a cancelar." },
+      },
+      required: ["post_id"],
+    },
+  },
+  {
+    name: "excluir_post",
+    description: "Exclui permanentemente um post. Só é permitido para posts com status draft ou failed. Posts agendados devem ser cancelados antes com cancelar_agendamento.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        post_id: { type: "string", description: "ID do post a excluir." },
+      },
+      required: ["post_id"],
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -325,6 +363,107 @@ async function executeTool(
         status: "publishing",
         media_count: mediaInput.length,
         message: `Post enviado para publicação imediata${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}. Será processado em instantes.`,
+      }
+    }
+
+    case "editar_post": {
+      const postId = args.post_id as string
+      const newContent = args.content as string | undefined
+      const newScheduledAt = args.scheduled_at as string | undefined
+
+      // Verifica que o post pertence ao workspace e ainda pode ser editado
+      const existing = await sql`
+        SELECT id, status, content, scheduled_at FROM posts
+        WHERE id = ${postId} AND workspace_id = ${organizationId}
+      `
+      if (!existing.length) throw new Error(`Post ${postId} não encontrado neste workspace.`)
+
+      const post = existing[0]
+      if (post.status === "published") throw new Error("Não é possível editar um post já publicado.")
+      if (post.status === "failed") throw new Error("Post falhou ao publicar. Use excluir_post e crie um novo.")
+
+      // Valida nova data se fornecida
+      let scheduledDate: Date | undefined
+      if (newScheduledAt !== undefined) {
+        if (post.status !== "scheduled") throw new Error("Só é possível alterar scheduled_at em posts com status scheduled. Use cancelar_agendamento primeiro se quiser mudar para draft.")
+        scheduledDate = new Date(newScheduledAt)
+        if (isNaN(scheduledDate.getTime())) throw new Error("scheduled_at inválido. Use formato ISO 8601.")
+        if (scheduledDate <= new Date()) throw new Error("scheduled_at deve ser uma data futura.")
+      }
+
+      if (!newContent && !scheduledDate) throw new Error("Informe ao menos content ou scheduled_at para editar.")
+
+      const updatedContent = newContent ?? post.content
+      if (scheduledDate) {
+        await sql`
+          UPDATE posts SET content = ${updatedContent}, scheduled_at = ${scheduledDate.toISOString()}, updated_at = NOW()
+          WHERE id = ${postId}
+        `
+        // Atualiza a fila de agendamento
+        await sql`
+          UPDATE post_queue SET scheduled_at = ${scheduledDate.toISOString()}, updated_at = NOW()
+          WHERE post_id = ${postId} AND status = 'pending'
+        `
+      } else {
+        await sql`
+          UPDATE posts SET content = ${updatedContent}, updated_at = NOW()
+          WHERE id = ${postId}
+        `
+      }
+
+      return {
+        post_id: postId,
+        message: `Post atualizado com sucesso.${scheduledDate ? ` Novo agendamento: ${scheduledDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}`,
+      }
+    }
+
+    case "cancelar_agendamento": {
+      const postId = args.post_id as string
+
+      const existing = await sql`
+        SELECT id, status FROM posts
+        WHERE id = ${postId} AND workspace_id = ${organizationId}
+      `
+      if (!existing.length) throw new Error(`Post ${postId} não encontrado neste workspace.`)
+
+      const post = existing[0]
+      if (post.status !== "scheduled") throw new Error(`Post não está agendado (status atual: ${post.status}).`)
+
+      // Remove da fila e muda status para draft
+      await sql`
+        DELETE FROM post_queue WHERE post_id = ${postId} AND status = 'pending'
+      `
+      await sql`
+        UPDATE posts SET status = 'draft', scheduled_at = NULL, updated_at = NOW()
+        WHERE id = ${postId}
+      `
+
+      return {
+        post_id: postId,
+        status: "draft",
+        message: "Agendamento cancelado. O post voltou para rascunho e pode ser editado ou excluído.",
+      }
+    }
+
+    case "excluir_post": {
+      const postId = args.post_id as string
+
+      const existing = await sql`
+        SELECT id, status FROM posts
+        WHERE id = ${postId} AND workspace_id = ${organizationId}
+      `
+      if (!existing.length) throw new Error(`Post ${postId} não encontrado neste workspace.`)
+
+      const post = existing[0]
+      if (post.status === "published") throw new Error("Não é possível excluir um post já publicado nas redes sociais.")
+      if (post.status === "scheduled") throw new Error("Post está agendado. Use cancelar_agendamento antes de excluir.")
+
+      // Exclui em cascata (post_targets, post_media e post_queue via FK ON DELETE CASCADE)
+      await sql`DELETE FROM posts WHERE id = ${postId}`
+
+      return {
+        post_id: postId,
+        message: "Post excluído permanentemente com sucesso.",
       }
     }
 
