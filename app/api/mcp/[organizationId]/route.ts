@@ -61,11 +61,16 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "criar_post",
-    description: "Cria um post em rascunho para uma ou mais contas com permissão MCP ativada. Suporta imagens e vídeos.",
+    description: "Cria um post em rascunho para uma ou mais contas com permissão MCP ativada. Suporta feed, story e reel, com imagens e vídeos.",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Texto do post." },
+        content: { type: "string", description: "Texto/legenda do post. Pode ser vazio para stories." },
+        post_type: {
+          type: "string",
+          enum: ["feed", "story", "reel"],
+          description: "Tipo do post. feed = post normal, story = story (expira em 24h), reel = vídeo curto. Padrão: feed.",
+        },
         account_ids: {
           type: "array",
           items: { type: "string" },
@@ -73,14 +78,14 @@ const TOOLS: McpTool[] = [
         },
         media: {
           type: "array",
-          description: "Mídias do post (opcional). Máx 10 itens para carrossel.",
+          description: "Mídias do post. Obrigatório para story e reel. Máx 10 para carrossel de feed.",
           items: {
             type: "object",
             properties: {
               type: { type: "string", enum: ["image", "video"], description: "Tipo da mídia." },
-              url: { type: "string", description: "URL pública da mídia (Opção A — recomendada)." },
-              media_type: { type: "string", description: "MIME type: image/jpeg, image/png, image/webp, video/mp4 (Opção B — base64)." },
-              data: { type: "string", description: "Conteúdo em base64 (Opção B)." },
+              url: { type: "string", description: "URL pública da mídia (recomendado)." },
+              media_type: { type: "string", description: "MIME type: image/jpeg, image/png, image/webp, video/mp4 (para envio via base64)." },
+              data: { type: "string", description: "Conteúdo em base64 (alternativa à url)." },
             },
             required: ["type"],
           },
@@ -91,11 +96,16 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "agendar_post",
-    description: "Cria e agenda um post para uma data/hora específica (ISO 8601, horário de Brasília). Suporta imagens e vídeos.",
+    description: "Cria e agenda um post para uma data/hora específica (ISO 8601, horário de Brasília). Suporta feed, story e reel, com imagens e vídeos.",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Texto do post." },
+        content: { type: "string", description: "Texto/legenda do post. Pode ser vazio para stories." },
+        post_type: {
+          type: "string",
+          enum: ["feed", "story", "reel"],
+          description: "Tipo do post. feed = post normal, story = story (expira em 24h), reel = vídeo curto. Padrão: feed.",
+        },
         scheduled_at: { type: "string", description: "Data e hora ISO 8601, ex: 2026-06-10T14:30:00-03:00" },
         account_ids: {
           type: "array",
@@ -104,7 +114,7 @@ const TOOLS: McpTool[] = [
         },
         media: {
           type: "array",
-          description: "Mídias do post (opcional). Máx 10 itens para carrossel.",
+          description: "Mídias do post. Obrigatório para story e reel. Máx 10 para carrossel de feed.",
           items: {
             type: "object",
             properties: {
@@ -122,11 +132,16 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "publicar_agora",
-    description: "Publica imediatamente um post em uma ou mais contas com permissão MCP ativada. Suporta imagens e vídeos.",
+    description: "Publica imediatamente um post em uma ou mais contas com permissão MCP ativada. Suporta feed, story e reel, com imagens e vídeos.",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Texto do post." },
+        content: { type: "string", description: "Texto/legenda do post. Pode ser vazio para stories." },
+        post_type: {
+          type: "string",
+          enum: ["feed", "story", "reel"],
+          description: "Tipo do post. feed = post normal, story = story (expira em 24h), reel = vídeo curto. Padrão: feed.",
+        },
         account_ids: {
           type: "array",
           items: { type: "string" },
@@ -134,7 +149,7 @@ const TOOLS: McpTool[] = [
         },
         media: {
           type: "array",
-          description: "Mídias do post (opcional). Máx 10 itens para carrossel.",
+          description: "Mídias do post. Obrigatório para story e reel. Máx 10 para carrossel de feed.",
           items: {
             type: "object",
             properties: {
@@ -152,12 +167,17 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "editar_post",
-    description: "Edita o conteúdo ou a data de agendamento de um post que ainda não foi publicado (status draft ou scheduled). Use para corrigir erros antes da publicação.",
+    description: "Edita o conteúdo, tipo ou data de agendamento de um post que ainda não foi publicado (status draft ou scheduled). Use para corrigir erros antes da publicação.",
     inputSchema: {
       type: "object",
       properties: {
         post_id: { type: "string", description: "ID do post a editar." },
         content: { type: "string", description: "Novo texto do post (opcional — omita para manter o atual)." },
+        post_type: {
+          type: "string",
+          enum: ["feed", "story", "reel"],
+          description: "Novo tipo do post (opcional — omita para manter o atual).",
+        },
         scheduled_at: {
           type: "string",
           description: "Nova data/hora de agendamento ISO 8601 (opcional — omita para manter a atual). Apenas para posts com status scheduled.",
@@ -253,16 +273,22 @@ async function executeTool(
       const limit = Math.min(Number(args.limit ?? 20), 50)
       const posts = status
         ? await sql`
-            SELECT id, content, status, scheduled_at, published_at, created_at
-            FROM posts
-            WHERE workspace_id = ${organizationId} AND status = ${status}
-            ORDER BY created_at DESC LIMIT ${limit}
+            SELECT p.id, p.content, p.status, p.post_type, p.scheduled_at, p.published_at, p.created_at,
+                   COALESCE(ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL), ARRAY[]::text[]) AS target_post_types
+            FROM posts p
+            LEFT JOIN post_targets pt ON pt.post_id = p.id
+            WHERE p.workspace_id = ${organizationId} AND p.status = ${status}
+            GROUP BY p.id
+            ORDER BY p.created_at DESC LIMIT ${limit}
           `
         : await sql`
-            SELECT id, content, status, scheduled_at, published_at, created_at
-            FROM posts
-            WHERE workspace_id = ${organizationId}
-            ORDER BY created_at DESC LIMIT ${limit}
+            SELECT p.id, p.content, p.status, p.post_type, p.scheduled_at, p.published_at, p.created_at,
+                   COALESCE(ARRAY_AGG(DISTINCT pt.post_type) FILTER (WHERE pt.post_type IS NOT NULL), ARRAY[]::text[]) AS target_post_types
+            FROM posts p
+            LEFT JOIN post_targets pt ON pt.post_id = p.id
+            WHERE p.workspace_id = ${organizationId}
+            GROUP BY p.id
+            ORDER BY p.created_at DESC LIMIT ${limit}
           `
       return { posts }
     }
@@ -271,10 +297,19 @@ async function executeTool(
       const content = args.content as string
       const account_ids = args.account_ids as string[]
       const mediaInput = (args.media ?? []) as McpMediaInput[]
+      const postType = (args.post_type as string | undefined) ?? "feed"
+
+      if (!["feed", "story", "reel"].includes(postType)) throw new Error("post_type inválido. Use: feed, story ou reel.")
+      if ((postType === "story" || postType === "reel") && mediaInput.length === 0) {
+        throw new Error(`post_type "${postType}" exige ao menos uma mídia. Forneça o campo media.`)
+      }
+      if (postType === "reel" && !mediaInput.some((m) => m.type === "video")) {
+        throw new Error("Reels exigem um vídeo. Certifique-se de que ao menos uma mídia seja do tipo video.")
+      }
 
       const post = await sql`
-        INSERT INTO posts (workspace_id, content, status, created_by, created_at, updated_at)
-        VALUES (${organizationId}, ${content}, 'draft', 'mcp', NOW(), NOW())
+        INSERT INTO posts (workspace_id, content, status, post_type, created_by, created_at, updated_at)
+        VALUES (${organizationId}, ${content}, 'draft', ${postType}, 'mcp', NOW(), NOW())
         RETURNING id
       `
       const postId = post[0].id
@@ -284,14 +319,15 @@ async function executeTool(
       for (const accountId of account_ids) {
         await sql`
           INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
-          VALUES (gen_random_uuid(), ${postId}, ${accountId}, 'feed', 'pending', NOW())
+          VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType}, 'pending', NOW())
         `
       }
       return {
         post_id: postId,
         status: "draft",
+        post_type: postType,
         media_count: mediaInput.length,
-        message: `Post criado como rascunho com sucesso${mediaInput.length ? ` (${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""})` : ""}.`,
+        message: `Post do tipo "${postType}" criado como rascunho com sucesso${mediaInput.length ? ` (${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""})` : ""}.`,
       }
     }
 
@@ -300,14 +336,23 @@ async function executeTool(
       const scheduled_at = args.scheduled_at as string
       const account_ids = args.account_ids as string[]
       const mediaInput = (args.media ?? []) as McpMediaInput[]
+      const postType = (args.post_type as string | undefined) ?? "feed"
+
+      if (!["feed", "story", "reel"].includes(postType)) throw new Error("post_type inválido. Use: feed, story ou reel.")
+      if ((postType === "story" || postType === "reel") && mediaInput.length === 0) {
+        throw new Error(`post_type "${postType}" exige ao menos uma mídia. Forneça o campo media.`)
+      }
+      if (postType === "reel" && !mediaInput.some((m) => m.type === "video")) {
+        throw new Error("Reels exigem um vídeo. Certifique-se de que ao menos uma mídia seja do tipo video.")
+      }
 
       const scheduledDate = new Date(scheduled_at)
       if (isNaN(scheduledDate.getTime())) throw new Error("scheduled_at inválido. Use formato ISO 8601.")
       if (scheduledDate <= new Date()) throw new Error("scheduled_at deve ser uma data futura.")
 
       const post = await sql`
-        INSERT INTO posts (workspace_id, content, status, scheduled_at, created_by, created_at, updated_at)
-        VALUES (${organizationId}, ${content}, 'scheduled', ${scheduledDate.toISOString()}, 'mcp', NOW(), NOW())
+        INSERT INTO posts (workspace_id, content, status, post_type, scheduled_at, created_by, created_at, updated_at)
+        VALUES (${organizationId}, ${content}, 'scheduled', ${postType}, ${scheduledDate.toISOString()}, 'mcp', NOW(), NOW())
         RETURNING id
       `
       const postId = post[0].id
@@ -317,7 +362,7 @@ async function executeTool(
       for (const accountId of account_ids) {
         await sql`
           INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
-          VALUES (gen_random_uuid(), ${postId}, ${accountId}, 'feed', 'pending', NOW())
+          VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType}, 'pending', NOW())
         `
       }
       await sql`
@@ -327,9 +372,10 @@ async function executeTool(
       return {
         post_id: postId,
         status: "scheduled",
+        post_type: postType,
         scheduled_at: scheduledDate.toISOString(),
         media_count: mediaInput.length,
-        message: `Post agendado com sucesso para ${scheduledDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}.`,
+        message: `${postType === "story" ? "Story" : postType === "reel" ? "Reel" : "Post"} agendado com sucesso para ${scheduledDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}.`,
       }
     }
 
@@ -337,10 +383,19 @@ async function executeTool(
       const content = args.content as string
       const account_ids = args.account_ids as string[]
       const mediaInput = (args.media ?? []) as McpMediaInput[]
+      const postType = (args.post_type as string | undefined) ?? "feed"
+
+      if (!["feed", "story", "reel"].includes(postType)) throw new Error("post_type inválido. Use: feed, story ou reel.")
+      if ((postType === "story" || postType === "reel") && mediaInput.length === 0) {
+        throw new Error(`post_type "${postType}" exige ao menos uma mídia. Forneça o campo media.`)
+      }
+      if (postType === "reel" && !mediaInput.some((m) => m.type === "video")) {
+        throw new Error("Reels exigem um vídeo. Certifique-se de que ao menos uma mídia seja do tipo video.")
+      }
 
       const post = await sql`
-        INSERT INTO posts (workspace_id, content, status, created_by, created_at, updated_at)
-        VALUES (${organizationId}, ${content}, 'scheduled', 'mcp', NOW(), NOW())
+        INSERT INTO posts (workspace_id, content, status, post_type, created_by, created_at, updated_at)
+        VALUES (${organizationId}, ${content}, 'scheduled', ${postType}, 'mcp', NOW(), NOW())
         RETURNING id
       `
       const postId = post[0].id
@@ -350,7 +405,7 @@ async function executeTool(
       for (const accountId of account_ids) {
         await sql`
           INSERT INTO post_targets (id, post_id, social_account_id, post_type, status, created_at)
-          VALUES (gen_random_uuid(), ${postId}, ${accountId}, 'feed', 'pending', NOW())
+          VALUES (gen_random_uuid(), ${postId}, ${accountId}, ${postType}, 'pending', NOW())
         `
       }
       const now = new Date(Date.now() + 10_000) // 10s no futuro para o cron pegar
@@ -361,19 +416,25 @@ async function executeTool(
       return {
         post_id: postId,
         status: "publishing",
+        post_type: postType,
         media_count: mediaInput.length,
-        message: `Post enviado para publicação imediata${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}. Será processado em instantes.`,
+        message: `${postType === "story" ? "Story" : postType === "reel" ? "Reel" : "Post"} enviado para publicação imediata${mediaInput.length ? ` com ${mediaInput.length} mídia${mediaInput.length > 1 ? "s" : ""}` : ""}. Será processado em instantes.`,
       }
     }
 
     case "editar_post": {
       const postId = args.post_id as string
       const newContent = args.content as string | undefined
+      const newPostType = args.post_type as string | undefined
       const newScheduledAt = args.scheduled_at as string | undefined
+
+      if (newPostType && !["feed", "story", "reel"].includes(newPostType)) {
+        throw new Error("post_type inválido. Use: feed, story ou reel.")
+      }
 
       // Verifica que o post pertence ao workspace e ainda pode ser editado
       const existing = await sql`
-        SELECT id, status, content, scheduled_at FROM posts
+        SELECT id, status, content, post_type, scheduled_at FROM posts
         WHERE id = ${postId} AND workspace_id = ${organizationId}
       `
       if (!existing.length) throw new Error(`Post ${postId} não encontrado neste workspace.`)
@@ -391,29 +452,42 @@ async function executeTool(
         if (scheduledDate <= new Date()) throw new Error("scheduled_at deve ser uma data futura.")
       }
 
-      if (!newContent && !scheduledDate) throw new Error("Informe ao menos content ou scheduled_at para editar.")
+      if (!newContent && !newPostType && !scheduledDate) {
+        throw new Error("Informe ao menos um campo para editar: content, post_type ou scheduled_at.")
+      }
 
       const updatedContent = newContent ?? post.content
+      const updatedPostType = newPostType ?? post.post_type
+
+      await sql`
+        UPDATE posts
+        SET content = ${updatedContent}, post_type = ${updatedPostType},
+            scheduled_at = ${scheduledDate ? scheduledDate.toISOString() : post.scheduled_at},
+            updated_at = NOW()
+        WHERE id = ${postId}
+      `
+
+      if (newPostType) {
+        // Sincroniza o post_type nos targets existentes
+        await sql`UPDATE post_targets SET post_type = ${updatedPostType} WHERE post_id = ${postId}`
+      }
+
       if (scheduledDate) {
-        await sql`
-          UPDATE posts SET content = ${updatedContent}, scheduled_at = ${scheduledDate.toISOString()}, updated_at = NOW()
-          WHERE id = ${postId}
-        `
-        // Atualiza a fila de agendamento
         await sql`
           UPDATE post_queue SET scheduled_at = ${scheduledDate.toISOString()}, updated_at = NOW()
           WHERE post_id = ${postId} AND status = 'pending'
         `
-      } else {
-        await sql`
-          UPDATE posts SET content = ${updatedContent}, updated_at = NOW()
-          WHERE id = ${postId}
-        `
       }
+
+      const changes: string[] = []
+      if (newContent) changes.push("conteúdo")
+      if (newPostType) changes.push(`tipo → ${newPostType}`)
+      if (scheduledDate) changes.push(`agendamento → ${scheduledDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`)
 
       return {
         post_id: postId,
-        message: `Post atualizado com sucesso.${scheduledDate ? ` Novo agendamento: ${scheduledDate.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}`,
+        post_type: updatedPostType,
+        message: `Post atualizado com sucesso. Alterações: ${changes.join(", ")}.`,
       }
     }
 
