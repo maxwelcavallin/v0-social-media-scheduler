@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
       "pages_show_list",
       "pages_read_engagement",
       "pages_manage_posts",
+      "pages_manage_pages",
       "instagram_basic",
       "instagram_content_publish",
       "business_management",
