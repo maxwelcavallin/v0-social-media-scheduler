@@ -8,8 +8,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { MessageSquare, Zap, Share2, Pencil, Copy, Check, Loader2 } from "lucide-react"
+import { MessageSquare, Zap, Share2, Pencil, Copy, Check, Loader2, ChevronLeft, ChevronRight, Film } from "lucide-react"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
+import { cn } from "@/lib/utils"
+
+// Proporção da preview por tipo de post
+const ASPECT_BY_TYPE: Record<string, string> = {
+  story: "9/16",
+  reel:  "9/16",
+  feed:  "4/5",
+  carousel: "4/5",
+}
 
 interface PostDetailsDialogProps {
   post: any
@@ -32,7 +41,10 @@ export function PostDetailsDialog({
 }: PostDetailsDialogProps) {
   const router = useRouter()
   const status = statusMap[displayStatus] || { label: displayStatus, variant: "outline" as const }
-  const postType = (post.post_types || [])[0] || "feed"
+  // post_type pode vir direto (calendário) ou via post_types[] (página de posts)
+  const postType: string = post.post_type || (post.post_types || [])[0] || "feed"
+  const mediaItems: { url: string; media_type: string }[] = Array.isArray(post.media) ? post.media : []
+  const [mediaIdx, setMediaIdx] = useState(0)
 
   const hasFeedback = post.review_status === "needs_changes" && post.review_notes
   const isPublished = post.status === "published"
@@ -97,11 +109,74 @@ export function PostDetailsDialog({
 
               {/* Aba Detalhes */}
               <TabsContent value="details" className="space-y-4 p-6 mt-0">
-                {post.thumbnail && (
-                  <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                    <img src={post.thumbnail} alt="Post thumbnail" className="w-full h-full object-cover" />
-                  </div>
-                )}
+                {/* Preview de mídia com proporção correta por tipo e carrossel */}
+                {(mediaItems.length > 0 || post.thumbnail) && (() => {
+                  const items = mediaItems.length > 0 ? mediaItems : [{ url: post.thumbnail, media_type: "image" }]
+                  const current = items[mediaIdx] || items[0]
+                  const aspect = ASPECT_BY_TYPE[postType] || "4/5"
+                  const isVideo = current?.media_type === "video" || postType === "reel"
+                  return (
+                    <div className="relative bg-black rounded-lg overflow-hidden mx-auto" style={{ aspectRatio: aspect, maxHeight: "480px" }}>
+                      {isVideo ? (
+                        <video
+                          key={current.url}
+                          src={current.url}
+                          className="w-full h-full object-contain"
+                          controls
+                          playsInline
+                        />
+                      ) : (
+                        <img
+                          src={current.url}
+                          alt={`Mídia ${mediaIdx + 1}`}
+                          className="w-full h-full object-contain"
+                        />
+                      )}
+
+                      {/* Badge tipo */}
+                      <div className="absolute top-2 left-2 flex gap-1.5">
+                        <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm font-medium capitalize">
+                          {postType === "reel" ? "Reel" : postType === "story" ? "Story" : postType === "carousel" ? "Carrossel" : "Feed"}
+                        </span>
+                        {isVideo && postType !== "reel" && (
+                          <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
+                            <Film className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Controles de carrossel */}
+                      {items.length > 1 && (
+                        <>
+                          <button
+                            onClick={() => setMediaIdx((i) => Math.max(0, i - 1))}
+                            disabled={mediaIdx === 0}
+                            className={cn("absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center transition-opacity", mediaIdx === 0 ? "opacity-30" : "opacity-90 hover:opacity-100")}
+                          >
+                            <ChevronLeft className="w-4 h-4 text-white" />
+                          </button>
+                          <button
+                            onClick={() => setMediaIdx((i) => Math.min(items.length - 1, i + 1))}
+                            disabled={mediaIdx === items.length - 1}
+                            className={cn("absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center transition-opacity", mediaIdx === items.length - 1 ? "opacity-30" : "opacity-90 hover:opacity-100")}
+                          >
+                            <ChevronRight className="w-4 h-4 text-white" />
+                          </button>
+                          {/* Indicador de página */}
+                          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                            {items.map((_, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setMediaIdx(i)}
+                                className={cn("w-1.5 h-1.5 rounded-full transition-all", i === mediaIdx ? "bg-white scale-125" : "bg-white/50")}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 <div className="grid grid-cols-2 gap-4">
                   {post.workspace_name && (

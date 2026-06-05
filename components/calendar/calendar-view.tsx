@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import React, { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
   format,
@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Instagram,
+
   Facebook,
   ImageIcon,
   Film,
@@ -104,6 +105,58 @@ const POST_TYPE_LABELS: Record<string, string> = {
   reel: "Reel",
   carousel: "Carrossel",
   story: "Story",
+}
+
+function CalendarPostMediaPreview({
+  items,
+  postType,
+}: {
+  items: { url: string; media_type: string }[]
+  postType: string
+}) {
+  const [idx, setIdx] = useState(0)
+  const current = items[idx] || items[0]
+  const aspect = postType === "story" || postType === "reel" ? "9/16" : "4/5"
+  const isVideo = current?.media_type === "video" || postType === "reel"
+
+  return (
+    <div className="relative bg-black w-full overflow-hidden" style={{ aspectRatio: aspect }}>
+      {isVideo ? (
+        <video src={current.url} className="w-full h-full object-contain" muted playsInline />
+      ) : (
+        <img src={current.url} alt="" className="w-full h-full object-contain" />
+      )}
+      <div className="absolute bottom-2 left-2 flex gap-1.5">
+        <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm font-medium">
+          {POST_TYPE_LABELS[postType] || postType}
+        </span>
+        {items.length > 1 && (
+          <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
+            <ImageIcon className="w-3 h-3" />
+            {idx + 1}/{items.length}
+          </span>
+        )}
+      </div>
+      {items.length > 1 && (
+        <>
+          <button
+            onClick={() => setIdx((i) => Math.max(0, i - 1))}
+            disabled={idx === 0}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center disabled:opacity-30"
+          >
+            <ChevronLeft className="w-4 h-4 text-white" />
+          </button>
+          <button
+            onClick={() => setIdx((i) => Math.min(items.length - 1, i + 1))}
+            disabled={idx === items.length - 1}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center disabled:opacity-30"
+          >
+            <ChevronRight className="w-4 h-4 text-white" />
+          </button>
+        </>
+      )}
+    </div>
+  )
 }
 
 interface Account {
@@ -528,31 +581,12 @@ export function CalendarView({ posts, accounts = [], workspaceId, workspaces = [
 
                 return (
                   <div key={post.id} className="border border-border rounded-xl overflow-hidden">
-                    {/* Thumbnail */}
-                    {post.thumbnail && (
-                      <div className="relative w-full h-48 bg-black">
-                        {hasVideo ? (
-                          <video src={post.thumbnail} className="w-full h-full object-cover" muted />
-                        ) : (
-                          <img src={post.thumbnail} alt="" className="w-full h-full object-cover" />
-                        )}
-                        <div className="absolute bottom-2 left-2 flex gap-1.5">
-                          <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm font-medium">
-                            {POST_TYPE_LABELS[postType] || postType}
-                          </span>
-                          {(post.media_count ?? 0) > 1 && (
-                            <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
-                              <ImageIcon className="w-3 h-3" />
-                              {post.media_count}
-                            </span>
-                          )}
-                          {hasVideo && postType !== "reel" && (
-                            <span className="text-xs bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
-                              <Film className="w-3 h-3" />
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                    {/* Preview de mídia com proporção correta por tipo */}
+                    {(mediaItems.length > 0 || post.thumbnail) && (
+                      <CalendarPostMediaPreview
+                        items={mediaItems.length > 0 ? mediaItems : [{ url: post.thumbnail!, media_type: "image" }]}
+                        postType={postType}
+                      />
                     )}
 
                     <div className="p-4 flex flex-col gap-3">

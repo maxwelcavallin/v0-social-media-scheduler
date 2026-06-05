@@ -111,7 +111,10 @@ export function WorkspacePostsClient({
                   className="cursor-pointer"
                   onClick={() => setSelectedPostId(post.id)}
                 >
-                  <div className="aspect-square bg-muted relative overflow-hidden">
+                  <div
+                    className="bg-muted relative overflow-hidden"
+                    style={{ aspectRatio: (postType === "story" || postType === "reel") ? "9/16" : "4/5" }}
+                  >
                     {post.thumbnail ? (
                       post.primary_media_type === "video" && post.thumbnail === post.primary_media_url ? (
                         <VideoThumbnail

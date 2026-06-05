@@ -33,6 +33,7 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
     sql`
       SELECT
         p.id, p.content, p.status, p.scheduled_at, p.created_at,
+        COALESCE(p.post_type, 'feed') AS post_type,
         COALESCE(
           (
             SELECT JSON_AGG(
@@ -50,12 +51,12 @@ export default async function WorkspaceCalendarPage({ params }: Props) {
           ),
           '[]'::json
         ) as accounts,
-        (SELECT COUNT(*)::int FROM post_media pm WHERE pm.post_id = p.id) as media_count,
+        (SELECT COUNT(*)::int FROM post_media pm WHERE pm.post_id = p.id AND pm.order_index >= 0) as media_count,
         (SELECT pm2.url FROM post_media pm2 WHERE pm2.post_id = p.id ORDER BY pm2.order_index ASC LIMIT 1) as thumbnail,
         COALESCE(
           (
-            SELECT JSON_AGG(JSON_BUILD_OBJECT('url', pm3.url, 'media_type', pm3.media_type) ORDER BY pm3.order_index ASC)
-            FROM post_media pm3 WHERE pm3.post_id = p.id
+            SELECT JSON_AGG(JSON_BUILD_OBJECT('url', pm3.url, 'media_type', pm3.media_type, 'order_index', pm3.order_index) ORDER BY pm3.order_index ASC)
+            FROM post_media pm3 WHERE pm3.post_id = p.id AND pm3.order_index >= 0
           ),
           '[]'::json
         ) as media
