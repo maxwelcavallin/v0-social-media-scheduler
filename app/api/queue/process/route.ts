@@ -134,43 +134,76 @@ async function processQueue() {
       }
     }
 
-    const allSucceeded = errors.length === 0
-    const allFailed = errors.length === targets.length
-    const maxReached = item.attempts >= item.max_attempts
+    // IMPORTANTE: a decisão de status NÃO pode se basear apenas nos targets
+    // processados nesta execução (que filtra status = 'pending'). Numa retentativa,
+    // targets que falharam antes já estão 'failed' e não voltam como 'pending',
+    // deixando `targets` vazio — o que antes marcava o post como "publicado"
+    // indevidamente. Por isso consultamos o estado REAL de TODOS os targets do post.
+    const targetStats = await sql`
+      SELECT
+        COUNT(*)::int                                            AS total,
+        COUNT(*) FILTER (WHERE status = 'published')::int        AS published,
+        COUNT(*) FILTER (WHERE status = 'failed')::int           AS failed,
+        COUNT(*) FILTER (WHERE status = 'pending')::int          AS pending
+      FROM post_targets
+      WHERE post_id = ${item.post_id}
+    `
+    const stats = targetStats[0]
+    const total = stats.total ?? 0
+    const published = stats.published ?? 0
+    const failed = stats.failed ?? 0
+    const pending = stats.pending ?? 0
 
-    if (allSucceeded) {
-      // Todos os targets confirmados pela API — marca como publicado
+    // Coleta as mensagens de erro persistidas nos targets que falharam (fonte de verdade)
+    const failedTargets = await sql`
+      SELECT platform, error_message FROM post_targets
+      WHERE post_id = ${item.post_id} AND status = 'failed'
+    `
+    const persistedErrors = failedTargets
+      .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
+      .join("; ")
+
+    const maxReached = item.attempts >= item.max_attempts
+    const allPublished = total > 0 && published === total
+
+    if (allPublished) {
+      // Só marca como publicado quando TODOS os targets foram confirmados pela API
       await sql`
         UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${item.queue_id}
       `
       await sql`
-        UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW() WHERE id = ${item.post_id}
+        UPDATE posts SET status = 'published', published_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = ${item.post_id}
       `
-    } else if (allFailed && maxReached) {
-      // Todos falharam e sem tentativas restantes
+    } else if (pending > 0 && !maxReached) {
+      // Ainda há targets pendentes e tentativas restantes — reagenda para o próximo cron.
+      // Resetamos os targets que falharam nesta rodada para 'pending' para que sejam retentados.
       await sql`
-        UPDATE post_queue SET status = 'failed', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}
+        UPDATE post_targets SET status = 'pending' WHERE post_id = ${item.post_id} AND status = 'failed'
       `
       await sql`
-        UPDATE posts SET status = 'failed', error_message = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.post_id}
-      `
-    } else if (allFailed) {
-      // Todos falharam mas ainda há tentativas — reagenda para o próximo cron
-      await sql`
-        UPDATE post_queue SET status = 'pending', last_error = ${errors.join("; ")}, updated_at = NOW() WHERE id = ${item.queue_id}
+        UPDATE post_queue SET status = 'pending', last_error = ${persistedErrors || null}, updated_at = NOW() WHERE id = ${item.queue_id}
       `
       await sql`
         UPDATE posts SET status = 'scheduled', updated_at = NOW() WHERE id = ${item.post_id}
       `
-    } else {
-      // Sucesso parcial: alguns targets publicados, outros falharam.
-      // Não marca como publicado — mantém como falha parcial para o usuário saber.
-      const partialError = `Publicação parcial — falhas: ${errors.join("; ")}`
+    } else if (failed > 0 && published > 0) {
+      // Sucesso PARCIAL definitivo: alguns publicaram, outros falharam.
+      // NUNCA marca como publicado — sinaliza falha para o usuário ver o que não saiu.
+      const partialError = `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${persistedErrors}`
       await sql`
         UPDATE post_queue SET status = 'failed', last_error = ${partialError}, updated_at = NOW() WHERE id = ${item.queue_id}
       `
       await sql`
         UPDATE posts SET status = 'failed', error_message = ${partialError}, updated_at = NOW() WHERE id = ${item.post_id}
+      `
+    } else {
+      // Todos falharam (ou sem tentativas restantes) — marca como falha com o erro real.
+      const finalError = persistedErrors || errors.join("; ") || "Falha ao publicar (motivo desconhecido)"
+      await sql`
+        UPDATE post_queue SET status = 'failed', last_error = ${finalError}, updated_at = NOW() WHERE id = ${item.queue_id}
+      `
+      await sql`
+        UPDATE posts SET status = 'failed', error_message = ${finalError}, updated_at = NOW() WHERE id = ${item.post_id}
       `
     }
 

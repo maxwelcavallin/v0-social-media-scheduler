@@ -177,18 +177,32 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const allFailed = publishErrors.length === targets.length
+      const failedCount = publishErrors.length
+      const totalTargets = targets.length
+      const anyFailed = failedCount > 0
+      // Só é "publicado" se TODOS os targets confirmaram. Qualquer falha (total ou
+      // parcial) marca como 'failed' e expõe o erro — a plataforma nunca mente status.
+      const finalStatus = anyFailed ? "failed" : "published"
+      const errorMessage = anyFailed
+        ? (failedCount === totalTargets
+            ? publishErrors.join("; ")
+            : `Publicação parcial — ${totalTargets - failedCount}/${totalTargets} publicado(s). Falhas: ${publishErrors.join("; ")}`)
+        : null
+
       await sql`
         UPDATE posts
-        SET status = ${allFailed ? "failed" : "published"},
-            published_at = ${allFailed ? null : new Date().toISOString()},
-            error_message = ${publishErrors.length > 0 ? publishErrors.join("; ") : null},
+        SET status = ${finalStatus},
+            published_at = ${anyFailed ? null : new Date().toISOString()},
+            error_message = ${errorMessage},
             updated_at = NOW()
         WHERE id = ${postId}
       `
 
-      if (allFailed) {
-        return NextResponse.json({ id: postId, errors: publishErrors }, { status: 207 })
+      if (anyFailed) {
+        return NextResponse.json(
+          { id: postId, status: "failed", errors: publishErrors },
+          { status: 207 }
+        )
       }
       return NextResponse.json({ id: postId, status: "published" })
     } else {

@@ -48,10 +48,10 @@ export async function POST(
     cover_url = null,
   } = body
 
-  // Salvar post no banco antes de publicar
+  // Salvar post no banco como 'publishing' — só vira 'published' após confirmação da API
   const [post] = await sql`
     INSERT INTO posts (content, status, workspace_id, created_by, created_at, updated_at)
-    SELECT ${content}, 'published', o.id, m.user_id, NOW(), NOW()
+    SELECT ${content}, 'publishing', o.id, m.user_id, NOW(), NOW()
     FROM social_accounts sa
     JOIN organization o ON o.id = sa.workspace_id
     JOIN member m ON m.organization_id = o.id
@@ -73,10 +73,11 @@ export async function POST(
     }
   }
 
-  // Salvar target
-  await sql`
-    INSERT INTO post_targets (post_id, social_account_id, post_type)
-    VALUES (${post.id}, ${accountId}, ${post_type})
+  // Salvar target como pending — atualizado conforme o resultado da publicação
+  const [target] = await sql`
+    INSERT INTO post_targets (post_id, social_account_id, post_type, status)
+    VALUES (${post.id}, ${accountId}, ${post_type}, 'pending')
+    RETURNING id
   `
 
   // Publicar na rede social
@@ -106,6 +107,10 @@ export async function POST(
     }
 
     await sql`
+      UPDATE post_targets SET status = 'published', platform_post_id = ${externalId}
+      WHERE id = ${target.id}
+    `
+    await sql`
       UPDATE posts SET status = 'published', published_at = NOW(), updated_at = NOW()
       WHERE id = ${post.id}
     `
@@ -125,6 +130,10 @@ export async function POST(
       `
     }
 
+    await sql`
+      UPDATE post_targets SET status = 'failed', error_message = ${message}
+      WHERE id = ${target.id}
+    `
     await sql`
       UPDATE posts SET status = 'failed', error_message = ${message}, updated_at = NOW()
       WHERE id = ${post.id}
