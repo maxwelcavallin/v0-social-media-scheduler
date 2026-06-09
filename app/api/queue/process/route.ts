@@ -25,6 +25,75 @@ export async function POST(request: NextRequest) {
   return processQueue()
 }
 
+// Repara posts cujo status ficou "preso" porque o cron foi interrompido
+// (timeout/cold start) entre a confirmação dos targets e a atualização final
+// do post. A fonte de verdade é SEMPRE o estado dos post_targets.
+async function reconcileResolvedPosts() {
+  // Considera apenas posts que ainda NÃO estão num estado final ('published'/'failed')
+  // mas cujos targets já foram todos resolvidos (nenhum 'pending').
+  const stuck = await sql`
+    SELECT
+      p.id                                                AS post_id,
+      COUNT(pt.id)::int                                   AS total,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'published')::int AS published,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'failed')::int    AS failed,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int   AS pending
+    FROM posts p
+    JOIN post_targets pt ON pt.post_id = p.id
+    WHERE p.status IN ('scheduled', 'publishing', 'processing')
+    GROUP BY p.id
+    HAVING COUNT(pt.id) FILTER (WHERE pt.status = 'pending') = 0
+       AND COUNT(pt.id) > 0
+  `
+
+  for (const row of stuck) {
+    const total = row.total ?? 0
+    const published = row.published ?? 0
+    const failed = row.failed ?? 0
+
+    const failedTargets = await sql`
+      SELECT platform, error_message FROM post_targets
+      WHERE post_id = ${row.post_id} AND status = 'failed'
+    `
+    const persistedErrors = failedTargets
+      .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
+      .join("; ")
+
+    if (published === total) {
+      // Todos publicaram de verdade — corrige o status preso para 'published'
+      await sql`
+        UPDATE posts
+        SET status = 'published',
+            published_at = COALESCE(published_at, NOW()),
+            error_message = NULL,
+            updated_at = NOW()
+        WHERE id = ${row.post_id}
+      `
+      await sql`
+        UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE post_id = ${row.post_id}
+      `
+    } else if (failed > 0 && published > 0) {
+      // Sucesso parcial definitivo
+      const partialError = `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${persistedErrors}`
+      await sql`
+        UPDATE posts SET status = 'failed', error_message = ${partialError}, updated_at = NOW() WHERE id = ${row.post_id}
+      `
+      await sql`
+        UPDATE post_queue SET status = 'failed', last_error = ${partialError}, updated_at = NOW() WHERE post_id = ${row.post_id}
+      `
+    } else {
+      // Todos falharam
+      const finalError = persistedErrors || "Falha ao publicar (motivo desconhecido)"
+      await sql`
+        UPDATE posts SET status = 'failed', error_message = ${finalError}, updated_at = NOW() WHERE id = ${row.post_id}
+      `
+      await sql`
+        UPDATE post_queue SET status = 'failed', last_error = ${finalError}, updated_at = NOW() WHERE post_id = ${row.post_id}
+      `
+    }
+  }
+}
+
 async function processQueue() {
   // ────────────────────────────────────────────────────────────────────────
   // RECONCILIAÇÃO AUTO-CURATIVA (corrige status "preso")
@@ -226,6 +295,66 @@ async function processQueue() {
   }
 
   return NextResponse.json({ processed: results.length, results })
+}
+
+// Repara posts cujos targets já foram TODOS resolvidos pela API mas cujo
+// status do post/queue ficou "preso" (ex.: timeout da função serverless após
+// publicar mas antes de finalizar, ou attempts esgotados). A fonte de verdade
+// é o estado real dos post_targets, nunca a contagem de tentativas.
+async function reconcileResolvedPosts() {
+  // Posts ainda não-finalizados (scheduled/publishing) que possuem targets e
+  // nenhum target pendente — ou seja, todos já foram published ou failed.
+  const stuck = await sql`
+    SELECT
+      p.id                                              AS post_id,
+      COUNT(pt.id)::int                                 AS total,
+      COUNT(*) FILTER (WHERE pt.status = 'published')::int AS published,
+      COUNT(*) FILTER (WHERE pt.status = 'failed')::int    AS failed
+    FROM posts p
+    JOIN post_targets pt ON pt.post_id = p.id
+    WHERE p.status IN ('scheduled', 'publishing', 'processing')
+    GROUP BY p.id
+    HAVING COUNT(*) FILTER (WHERE pt.status = 'pending') = 0
+       AND COUNT(pt.id) > 0
+  `
+
+  for (const row of stuck) {
+    const total = row.total ?? 0
+    const published = row.published ?? 0
+
+    if (published === total) {
+      // Todos publicados de fato — finaliza como publicado.
+      await sql`
+        UPDATE posts SET status = 'published', published_at = COALESCE(published_at, NOW()), error_message = NULL, updated_at = NOW()
+        WHERE id = ${row.post_id}
+      `
+      await sql`
+        UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE post_id = ${row.post_id}
+      `
+    } else {
+      // Há targets que falharam — coleta os erros reais e marca como falha (parcial ou total).
+      const failedTargets = await sql`
+        SELECT sa.platform, pt.error_message
+        FROM post_targets pt
+        JOIN social_accounts sa ON sa.id = pt.social_account_id
+        WHERE pt.post_id = ${row.post_id} AND pt.status = 'failed'
+      `
+      const persistedErrors = failedTargets
+        .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
+        .join("; ")
+      const errorMessage = published > 0
+        ? `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${persistedErrors}`
+        : persistedErrors || "Falha ao publicar (motivo desconhecido)"
+
+      await sql`
+        UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW()
+        WHERE id = ${row.post_id}
+      `
+      await sql`
+        UPDATE post_queue SET status = 'failed', last_error = ${errorMessage}, updated_at = NOW() WHERE post_id = ${row.post_id}
+      `
+    }
+  }
 }
 
 async function waitForContainer(containerId: string, token: string, maxWaitMs = 30000, isDirectIg = false): Promise<void> {
