@@ -26,6 +26,16 @@ export async function POST(request: NextRequest) {
 }
 
 async function processQueue() {
+  // ────────────────────────────────────────────────────────────────────────
+  // RECONCILIAÇÃO AUTO-CURATIVA (corrige status "preso")
+  // Publicar vídeo/carrossel é lento. Se a função serverless do cron for morta
+  // por timeout DEPOIS de marcar os targets como 'published'/'failed' mas ANTES
+  // de atualizar o status do post, o post fica preso em 'scheduled'/'publishing'
+  // (mentindo o status). Além disso, quando attempts == max_attempts o item
+  // some da query principal e nunca seria finalizado. Esta etapa repara isso
+  // baseando-se no estado REAL dos targets, que é a fonte de verdade.
+  await reconcileResolvedPosts()
+
   // Fetch pending queue entries whose scheduled time has arrived
   // Each queue entry corresponds to one post, which may have multiple targets
   const pendingItems = await sql`
