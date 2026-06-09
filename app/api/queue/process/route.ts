@@ -6,7 +6,6 @@ import { publishToFacebook, publishToInstagram, GRAPH_API, GRAPH_IG } from "@/li
 export const maxDuration = 300
 
 // GET — called by Vercel Cron every 5 minutes
-// Vercel sends: Authorization: Bearer <CRON_SECRET>
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET
@@ -25,19 +24,24 @@ export async function POST(request: NextRequest) {
   return processQueue()
 }
 
-// Repara posts cujo status ficou "preso" porque o cron foi interrompido
-// (timeout/cold start) entre a confirmação dos targets e a atualização final
-// do post. A fonte de verdade é SEMPRE o estado dos post_targets.
+// ─────────────────────────────────────────────────────────────────────────────
+// RECONCILIAÇÃO AUTO-CURATIVA
+// Roda no início de CADA execução do cron. Detecta posts que ficaram presos
+// em status não-final (scheduled/publishing/processing) porque:
+//   (a) a função serverless foi morta por timeout após marcar os targets mas
+//       antes de atualizar o post; ou
+//   (b) attempts atingiu max_attempts e o item saiu da query principal.
+// A fonte de verdade é SEMPRE o estado dos post_targets — nunca contagens
+// de tentativas.
+// ─────────────────────────────────────────────────────────────────────────────
 async function reconcileResolvedPosts() {
-  // Considera apenas posts que ainda NÃO estão num estado final ('published'/'failed')
-  // mas cujos targets já foram todos resolvidos (nenhum 'pending').
   const stuck = await sql`
     SELECT
-      p.id                                                AS post_id,
-      COUNT(pt.id)::int                                   AS total,
-      COUNT(pt.id) FILTER (WHERE pt.status = 'published')::int AS published,
-      COUNT(pt.id) FILTER (WHERE pt.status = 'failed')::int    AS failed,
-      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int   AS pending
+      p.id                                                           AS post_id,
+      COUNT(pt.id)::int                                              AS total,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'published')::int       AS published,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'failed')::int          AS failed,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int         AS pending
     FROM posts p
     JOIN post_targets pt ON pt.post_id = p.id
     WHERE p.status IN ('scheduled', 'publishing', 'processing')
@@ -47,20 +51,12 @@ async function reconcileResolvedPosts() {
   `
 
   for (const row of stuck) {
-    const total = row.total ?? 0
-    const published = row.published ?? 0
-    const failed = row.failed ?? 0
-
-    const failedTargets = await sql`
-      SELECT platform, error_message FROM post_targets
-      WHERE post_id = ${row.post_id} AND status = 'failed'
-    `
-    const persistedErrors = failedTargets
-      .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
-      .join("; ")
+    const total: number = row.total ?? 0
+    const published: number = row.published ?? 0
+    const failed: number = row.failed ?? 0
 
     if (published === total) {
-      // Todos publicaram de verdade — corrige o status preso para 'published'
+      // Todos os targets publicados — finaliza o post
       await sql`
         UPDATE posts
         SET status = 'published',
@@ -70,46 +66,122 @@ async function reconcileResolvedPosts() {
         WHERE id = ${row.post_id}
       `
       await sql`
-        UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE post_id = ${row.post_id}
-      `
-    } else if (failed > 0 && published > 0) {
-      // Sucesso parcial definitivo
-      const partialError = `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${persistedErrors}`
-      await sql`
-        UPDATE posts SET status = 'failed', error_message = ${partialError}, updated_at = NOW() WHERE id = ${row.post_id}
-      `
-      await sql`
-        UPDATE post_queue SET status = 'failed', last_error = ${partialError}, updated_at = NOW() WHERE post_id = ${row.post_id}
+        UPDATE post_queue SET status = 'done', updated_at = NOW()
+        WHERE post_id = ${row.post_id}
       `
     } else {
-      // Todos falharam
-      const finalError = persistedErrors || "Falha ao publicar (motivo desconhecido)"
+      // Há falhas (total ou parcial)
+      const failedRows = await sql`
+        SELECT sa.platform, pt.error_message
+        FROM post_targets pt
+        JOIN social_accounts sa ON sa.id = pt.social_account_id
+        WHERE pt.post_id = ${row.post_id} AND pt.status = 'failed'
+      `
+      const errDetails = failedRows
+        .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
+        .join("; ")
+      const errorMessage =
+        failed < total
+          ? `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${errDetails}`
+          : errDetails || "Falha ao publicar (motivo desconhecido)"
+
       await sql`
-        UPDATE posts SET status = 'failed', error_message = ${finalError}, updated_at = NOW() WHERE id = ${row.post_id}
+        UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW()
+        WHERE id = ${row.post_id}
       `
       await sql`
-        UPDATE post_queue SET status = 'failed', last_error = ${finalError}, updated_at = NOW() WHERE post_id = ${row.post_id}
+        UPDATE post_queue SET status = 'failed', last_error = ${errorMessage}, updated_at = NOW()
+        WHERE post_id = ${row.post_id}
       `
     }
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FINALIZA um item da fila consultando o estado REAL de todos os targets.
+// Chamado tanto após processar os targets quanto em situações de edge-case.
+// ─────────────────────────────────────────────────────────────────────────────
+async function finalizeQueueItem(queueId: string, postId: string) {
+  const rows = await sql`
+    SELECT
+      COUNT(pt.id)::int                                        AS total,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'published')::int AS published,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'failed')::int    AS failed,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int   AS pending
+    FROM post_targets pt
+    WHERE pt.post_id = ${postId}
+  `
+  const stats = rows[0]
+  const total: number = stats?.total ?? 0
+  const published: number = stats?.published ?? 0
+  const failed: number = stats?.failed ?? 0
+  const pending: number = stats?.pending ?? 0
+
+  // Ainda há targets não resolvidos — mantém como pending para próxima rodada
+  if (pending > 0) {
+    await sql`
+      UPDATE post_queue SET status = 'pending', updated_at = NOW()
+      WHERE id = ${queueId}
+    `
+    await sql`
+      UPDATE posts SET status = 'scheduled', updated_at = NOW()
+      WHERE id = ${postId}
+    `
+    return
+  }
+
+  if (published === total && total > 0) {
+    // Todos publicados
+    await sql`
+      UPDATE post_queue SET status = 'done', updated_at = NOW()
+      WHERE id = ${queueId}
+    `
+    await sql`
+      UPDATE posts
+      SET status = 'published',
+          published_at = COALESCE(published_at, NOW()),
+          error_message = NULL,
+          updated_at = NOW()
+      WHERE id = ${postId}
+    `
+    return
+  }
+
+  // Há falhas — coleta os erros reais persistidos nos targets
+  const failedRows = await sql`
+    SELECT sa.platform, pt.error_message
+    FROM post_targets pt
+    JOIN social_accounts sa ON sa.id = pt.social_account_id
+    WHERE pt.post_id = ${postId} AND pt.status = 'failed'
+  `
+  const errDetails = failedRows
+    .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
+    .join("; ")
+  const errorMessage =
+    failed < total && published > 0
+      ? `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${errDetails}`
+      : errDetails || "Falha ao publicar (motivo desconhecido)"
+
+  await sql`
+    UPDATE post_queue SET status = 'failed', last_error = ${errorMessage}, updated_at = NOW()
+    WHERE id = ${queueId}
+  `
+  await sql`
+    UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW()
+    WHERE id = ${postId}
+  `
+}
+
 async function processQueue() {
-  // ────────────────────────────────────────────────────────────────────────
-  // RECONCILIAÇÃO AUTO-CURATIVA (corrige status "preso")
-  // Publicar vídeo/carrossel é lento. Se a função serverless do cron for morta
-  // por timeout DEPOIS de marcar os targets como 'published'/'failed' mas ANTES
-  // de atualizar o status do post, o post fica preso em 'scheduled'/'publishing'
-  // (mentindo o status). Além disso, quando attempts == max_attempts o item
-  // some da query principal e nunca seria finalizado. Esta etapa repara isso
-  // baseando-se no estado REAL dos targets, que é a fonte de verdade.
+  // 1. Reconcilia posts presos de execuções anteriores
   await reconcileResolvedPosts()
 
-  // Fetch pending queue entries whose scheduled time has arrived
-  // Each queue entry corresponds to one post, which may have multiple targets
+  // 2. Busca itens pendentes cuja janela de agendamento chegou.
+  //    Não filtra por attempts < max_attempts — a reconciliação cuida dos que
+  //    esgotaram tentativas sem finalizar.
   const pendingItems = await sql`
     SELECT
-      pq.id        AS queue_id,
+      pq.id           AS queue_id,
       pq.post_id,
       pq.attempts,
       pq.max_attempts,
@@ -125,7 +197,6 @@ async function processQueue() {
       AND pq.scheduled_at <= NOW()
       AND pq.attempts < pq.max_attempts
     GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts, p.content, p.workspace_id
-    -- cover_url is derived from MAX aggregate, no need in GROUP BY
     LIMIT 3
   `
 
@@ -136,19 +207,18 @@ async function processQueue() {
   const results = []
 
   for (const item of pendingItems) {
-    // Mark as processing immediately to prevent double-execution
+    // Marca como processing IMEDIATAMENTE para evitar double-execution
     await sql`
       UPDATE post_queue
       SET status = 'processing', attempts = attempts + 1, updated_at = NOW()
       WHERE id = ${item.queue_id}
     `
 
-    // Fetch all pending targets for this post
+    // Busca APENAS os targets ainda pending (não retenta targets que já publicaram)
     const targets = await sql`
       SELECT
         pt.id           AS target_id,
         pt.post_type,
-        pt.status       AS target_status,
         sa.platform,
         sa.account_id,
         sa.page_id,
@@ -158,8 +228,6 @@ async function processQueue() {
       WHERE pt.post_id = ${item.post_id}
         AND pt.status = 'pending'
     `
-
-    const errors: string[] = []
 
     for (const target of targets) {
       try {
@@ -186,7 +254,6 @@ async function processQueue() {
           })
         }
 
-        // post_targets has no updated_at column
         await sql`
           UPDATE post_targets
           SET status = 'published', platform_post_id = ${platformPostId}
@@ -194,10 +261,12 @@ async function processQueue() {
         `
       } catch (err: any) {
         const errMsg = err?.message || String(err)
-        errors.push(`${target.platform}: ${errMsg}`)
 
-        // Erro 190: token sem permissões — marcar conta para reconexão obrigatória
-        const isPermissionError = errMsg.includes("190") || errMsg.includes("impersonating a user's page") || errMsg.includes("pages_read_engagement")
+        // Erro 190: token sem permissão de Página — marca conta para reconexão
+        const isPermissionError =
+          errMsg.includes("190") ||
+          errMsg.includes("impersonating a user's page") ||
+          errMsg.includes("pages_read_engagement")
         if (isPermissionError) {
           await sql`
             UPDATE social_accounts SET needs_reconnect = true, updated_at = NOW()
@@ -213,151 +282,20 @@ async function processQueue() {
       }
     }
 
-    // IMPORTANTE: a decisão de status NÃO pode se basear apenas nos targets
-    // processados nesta execução (que filtra status = 'pending'). Numa retentativa,
-    // targets que falharam antes já estão 'failed' e não voltam como 'pending',
-    // deixando `targets` vazio — o que antes marcava o post como "publicado"
-    // indevidamente. Por isso consultamos o estado REAL de TODOS os targets do post.
-    const targetStats = await sql`
-      SELECT
-        COUNT(*)::int                                            AS total,
-        COUNT(*) FILTER (WHERE status = 'published')::int        AS published,
-        COUNT(*) FILTER (WHERE status = 'failed')::int           AS failed,
-        COUNT(*) FILTER (WHERE status = 'pending')::int          AS pending
-      FROM post_targets
-      WHERE post_id = ${item.post_id}
-    `
-    const stats = targetStats[0]
-    const total = stats.total ?? 0
-    const published = stats.published ?? 0
-    const failed = stats.failed ?? 0
-    const pending = stats.pending ?? 0
-
-    // Coleta as mensagens de erro persistidas nos targets que falharam (fonte de verdade)
-    const failedTargets = await sql`
-      SELECT platform, error_message FROM post_targets
-      WHERE post_id = ${item.post_id} AND status = 'failed'
-    `
-    const persistedErrors = failedTargets
-      .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
-      .join("; ")
-
-    const maxReached = item.attempts >= item.max_attempts
-    const allPublished = total > 0 && published === total
-
-    if (allPublished) {
-      // Só marca como publicado quando TODOS os targets foram confirmados pela API
-      await sql`
-        UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${item.queue_id}
-      `
-      await sql`
-        UPDATE posts SET status = 'published', published_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = ${item.post_id}
-      `
-    } else if (pending > 0 && !maxReached) {
-      // Ainda há targets pendentes e tentativas restantes — reagenda para o próximo cron.
-      // Resetamos os targets que falharam nesta rodada para 'pending' para que sejam retentados.
-      await sql`
-        UPDATE post_targets SET status = 'pending' WHERE post_id = ${item.post_id} AND status = 'failed'
-      `
-      await sql`
-        UPDATE post_queue SET status = 'pending', last_error = ${persistedErrors || null}, updated_at = NOW() WHERE id = ${item.queue_id}
-      `
-      await sql`
-        UPDATE posts SET status = 'scheduled', updated_at = NOW() WHERE id = ${item.post_id}
-      `
-    } else if (failed > 0 && published > 0) {
-      // Sucesso PARCIAL definitivo: alguns publicaram, outros falharam.
-      // NUNCA marca como publicado — sinaliza falha para o usuário ver o que não saiu.
-      const partialError = `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${persistedErrors}`
-      await sql`
-        UPDATE post_queue SET status = 'failed', last_error = ${partialError}, updated_at = NOW() WHERE id = ${item.queue_id}
-      `
-      await sql`
-        UPDATE posts SET status = 'failed', error_message = ${partialError}, updated_at = NOW() WHERE id = ${item.post_id}
-      `
-    } else {
-      // Todos falharam (ou sem tentativas restantes) — marca como falha com o erro real.
-      const finalError = persistedErrors || errors.join("; ") || "Falha ao publicar (motivo desconhecido)"
-      await sql`
-        UPDATE post_queue SET status = 'failed', last_error = ${finalError}, updated_at = NOW() WHERE id = ${item.queue_id}
-      `
-      await sql`
-        UPDATE posts SET status = 'failed', error_message = ${finalError}, updated_at = NOW() WHERE id = ${item.post_id}
-      `
-    }
+    // Finaliza consultando o estado real de TODOS os targets (fonte de verdade)
+    await finalizeQueueItem(item.queue_id, item.post_id)
 
     results.push({
       queueId: item.queue_id,
       postId: item.post_id,
-      targets: targets.length,
-      errors: errors.length,
+      targetsProcessed: targets.length,
     })
   }
 
   return NextResponse.json({ processed: results.length, results })
 }
 
-// Repara posts cujos targets já foram TODOS resolvidos pela API mas cujo
-// status do post/queue ficou "preso" (ex.: timeout da função serverless após
-// publicar mas antes de finalizar, ou attempts esgotados). A fonte de verdade
-// é o estado real dos post_targets, nunca a contagem de tentativas.
-async function reconcileResolvedPosts() {
-  // Posts ainda não-finalizados (scheduled/publishing) que possuem targets e
-  // nenhum target pendente — ou seja, todos já foram published ou failed.
-  const stuck = await sql`
-    SELECT
-      p.id                                              AS post_id,
-      COUNT(pt.id)::int                                 AS total,
-      COUNT(*) FILTER (WHERE pt.status = 'published')::int AS published,
-      COUNT(*) FILTER (WHERE pt.status = 'failed')::int    AS failed
-    FROM posts p
-    JOIN post_targets pt ON pt.post_id = p.id
-    WHERE p.status IN ('scheduled', 'publishing', 'processing')
-    GROUP BY p.id
-    HAVING COUNT(*) FILTER (WHERE pt.status = 'pending') = 0
-       AND COUNT(pt.id) > 0
-  `
-
-  for (const row of stuck) {
-    const total = row.total ?? 0
-    const published = row.published ?? 0
-
-    if (published === total) {
-      // Todos publicados de fato — finaliza como publicado.
-      await sql`
-        UPDATE posts SET status = 'published', published_at = COALESCE(published_at, NOW()), error_message = NULL, updated_at = NOW()
-        WHERE id = ${row.post_id}
-      `
-      await sql`
-        UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE post_id = ${row.post_id}
-      `
-    } else {
-      // Há targets que falharam — coleta os erros reais e marca como falha (parcial ou total).
-      const failedTargets = await sql`
-        SELECT sa.platform, pt.error_message
-        FROM post_targets pt
-        JOIN social_accounts sa ON sa.id = pt.social_account_id
-        WHERE pt.post_id = ${row.post_id} AND pt.status = 'failed'
-      `
-      const persistedErrors = failedTargets
-        .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
-        .join("; ")
-      const errorMessage = published > 0
-        ? `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${persistedErrors}`
-        : persistedErrors || "Falha ao publicar (motivo desconhecido)"
-
-      await sql`
-        UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW()
-        WHERE id = ${row.post_id}
-      `
-      await sql`
-        UPDATE post_queue SET status = 'failed', last_error = ${errorMessage}, updated_at = NOW() WHERE post_id = ${row.post_id}
-      `
-    }
-  }
-}
-
-async function waitForContainer(containerId: string, token: string, maxWaitMs = 30000, isDirectIg = false): Promise<void> {
+export async function waitForContainer(containerId: string, token: string, maxWaitMs = 30000, isDirectIg = false): Promise<void> {
   const api = isDirectIg ? GRAPH_IG : GRAPH_API
   const start = Date.now()
   while (Date.now() - start < maxWaitMs) {
