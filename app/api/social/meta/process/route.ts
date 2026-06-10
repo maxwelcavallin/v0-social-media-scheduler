@@ -233,6 +233,7 @@ export async function POST(request: NextRequest) {
     // Step 6: Save pages and linked Instagram accounts
     console.log("[v0] meta/process step6: salvando", pages.length, "páginas")
     const saved: { platform: string; name: string }[] = []
+    const reconnectedAccountIds: string[] = [] // IDs das contas atualizadas para reatender posts falhos
 
     for (const page of pages) {
       // page.access_token é o Page Access Token — obrigatório para publicar no Instagram via Facebook Login.
@@ -255,6 +256,7 @@ export async function POST(request: NextRequest) {
         accessToken: pageToken,
         profilePictureUrl: page.picture?.url ?? null,
       })
+      reconnectedAccountIds.push(page.id)
       saved.push({ platform: "facebook", name: page.name })
 
       // Save linked Instagram Business Account
@@ -277,8 +279,64 @@ export async function POST(request: NextRequest) {
             accessToken: pageToken,
             profilePictureUrl: igData.profile_picture_url ?? null,
           })
+          reconnectedAccountIds.push(igData.id)
           saved.push({ platform: "instagram", name: igData.username || igData.name })
         }
+      }
+    }
+
+    // Step 7: Resetar posts agendados que falharam por falta de permissão nas contas
+    // recém-reconectadas. Isso permite que o cron os publique na próxima execução.
+    if (reconnectedAccountIds.length > 0) {
+      // Busca as social_accounts.id (UUIDs) a partir dos account_id externos reconectados
+      const reconnectedRows = await sql`
+        SELECT id FROM social_accounts
+        WHERE account_id = ANY(${reconnectedAccountIds}::text[])
+          AND workspace_id = ${workspaceId}
+      `
+      const reconnectedUuids = reconnectedRows.map((r: any) => r.id)
+
+      if (reconnectedUuids.length > 0) {
+        // Reseta para 'pending' apenas os targets que falharam por erro de permissão (190)
+        await sql`
+          UPDATE post_targets
+          SET status = 'pending', error_message = NULL
+          WHERE social_account_id = ANY(${reconnectedUuids}::uuid[])
+            AND status = 'failed'
+            AND (
+              error_message ILIKE '%impersonating a user%'
+              OR error_message ILIKE '%pages_read_engagement%'
+              OR error_message ILIKE '%[190]%'
+            )
+        `
+
+        // Reseta a fila dos posts que agora têm todos os targets pendentes novamente
+        await sql`
+          UPDATE post_queue pq
+          SET status = 'pending', attempts = 0, last_error = NULL, updated_at = NOW()
+          WHERE pq.status = 'failed'
+            AND EXISTS (
+              SELECT 1 FROM post_targets pt
+              WHERE pt.post_id = pq.post_id AND pt.status = 'pending'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM post_targets pt
+              WHERE pt.post_id = pq.post_id AND pt.status = 'failed'
+            )
+        `
+
+        // Reseta o status do post também
+        await sql`
+          UPDATE posts p
+          SET status = 'scheduled', error_message = NULL, updated_at = NOW()
+          WHERE p.status = 'failed'
+            AND EXISTS (
+              SELECT 1 FROM post_queue pq2
+              WHERE pq2.post_id = p.id AND pq2.status = 'pending'
+            )
+        `
+
+        console.log("[v0] meta/process: resetados targets e fila para accounts reconectadas:", reconnectedUuids.length)
       }
     }
 

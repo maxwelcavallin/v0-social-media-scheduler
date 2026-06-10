@@ -214,7 +214,9 @@ async function processQueue() {
       WHERE id = ${item.queue_id}
     `
 
-    // Busca APENAS os targets ainda pending (não retenta targets que já publicaram)
+    // Busca APENAS os targets ainda pending E cuja conta NÃO precisa de reconexão.
+    // Contas com needs_reconnect = true não têm token válido — tentar publicar
+    // consumiria uma tentativa e marcaria o post como failed sem motivo real.
     const targets = await sql`
       SELECT
         pt.id           AS target_id,
@@ -227,7 +229,27 @@ async function processQueue() {
       JOIN social_accounts sa ON sa.id = pt.social_account_id
       WHERE pt.post_id = ${item.post_id}
         AND pt.status = 'pending'
+        AND (sa.needs_reconnect IS NULL OR sa.needs_reconnect = false)
     `
+
+    // Se todos os targets pendentes são de contas que precisam reconexão,
+    // libera o item da fila sem consumir tentativa e aguarda reconexão do usuário.
+    const allPendingTargets = await sql`
+      SELECT COUNT(*)::int AS cnt
+      FROM post_targets pt
+      WHERE pt.post_id = ${item.post_id} AND pt.status = 'pending'
+    `
+    const totalPending = allPendingTargets[0]?.cnt ?? 0
+    if (targets.length === 0 && totalPending > 0) {
+      // Reverte o status para 'pending' sem incrementar attempts (a conta precisa reconexão)
+      await sql`
+        UPDATE post_queue
+        SET status = 'pending', attempts = attempts - 1, updated_at = NOW()
+        WHERE id = ${item.queue_id}
+      `
+      results.push({ queueId: item.queue_id, postId: item.post_id, skipped: true, reason: "needs_reconnect" })
+      continue
+    }
 
     for (const target of targets) {
       try {
@@ -261,18 +283,6 @@ async function processQueue() {
         `
       } catch (err: any) {
         const errMsg = err?.message || String(err)
-
-        // Erro 190: token sem permissão de Página — marca conta para reconexão
-        const isPermissionError =
-          errMsg.includes("190") ||
-          errMsg.includes("impersonating a user's page") ||
-          errMsg.includes("pages_read_engagement")
-        if (isPermissionError) {
-          await sql`
-            UPDATE social_accounts SET needs_reconnect = true, updated_at = NOW()
-            WHERE account_id = ${target.account_id} AND platform = ${target.platform}
-          `
-        }
 
         await sql`
           UPDATE post_targets
