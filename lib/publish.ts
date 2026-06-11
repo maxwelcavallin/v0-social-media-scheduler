@@ -31,8 +31,8 @@ export async function publishToFacebook(item: {
       return data.id || data.post_id
     }
 
-    // Vídeo: a Graph API exige upload em 2 fases:
-    // Fase 1 — inicia o upload e obtém o video_id
+    // Vídeo: a Graph API exige upload em 3 fases:
+    // Fase 1 — inicia o upload e obtém video_id + upload_url
     const startRes = await fetch(`${GRAPH_API}/${page_id}/video_stories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -41,16 +41,29 @@ export async function publishToFacebook(item: {
     const startData = await startRes.json()
     if (startData.error) throw new Error(`FB story fase start: ${startData.error.message}`)
     const videoId: string = startData.video_id
+    const uploadUrl: string = startData.upload_url
     if (!videoId) throw new Error("FB story: video_id não retornado na fase start")
+    if (!uploadUrl) throw new Error("FB story: upload_url não retornado na fase start")
 
-    // Fase 2 — finaliza com o video_url e o video_id obtido na fase start
+    // Fase 2 — envia o vídeo para o upload_url usando o header file_url
+    // O Facebook baixa o vídeo diretamente da URL fornecida
+    const uploadRes = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `OAuth ${access_token}`,
+        "file_url": media_urls[0],
+      },
+    })
+    const uploadData = await uploadRes.json()
+    if (uploadData.error) throw new Error(`FB story fase upload: ${uploadData.error.message}`)
+
+    // Fase 3 — finaliza e publica o story
     const finishRes = await fetch(`${GRAPH_API}/${page_id}/video_stories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         upload_phase: "finish",
         video_id: videoId,
-        video_url: media_urls[0],
         access_token,
       }),
     })
