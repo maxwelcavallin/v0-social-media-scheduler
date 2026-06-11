@@ -98,7 +98,52 @@ const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
 const getAccept = (postType: string) => {
   if (postType === "reel") return "video/*"
+  if (postType === "carousel") return "image/*" // carrossel só aceita imagem nas duas plataformas
   return "image/*,video/*"
+}
+
+// Regras por tipo de post — derivadas das limitações reais das APIs do Facebook e Instagram
+const RULES: Record<string, {
+  maxFiles: number
+  onlyVideo?: boolean
+  onlyImage?: boolean
+  requiresMedia: boolean
+  hint: string
+}> = {
+  feed:     { maxFiles: 1,  requiresMedia: false, hint: "1 foto ou vídeo" },
+  story:    { maxFiles: 1,  requiresMedia: true,  hint: "1 foto ou vídeo" },
+  reel:     { maxFiles: 1,  onlyVideo: true,  requiresMedia: true, hint: "1 vídeo" },
+  carousel: { maxFiles: 10, onlyImage: true, requiresMedia: true, hint: "2 a 10 fotos" },
+}
+
+// Valida se a mídia atual é compatível com o tipo de post e plataformas selecionadas.
+// Retorna uma string de erro ou null se tudo estiver ok.
+function validateMedia(
+  postType: string,
+  media: UploadedMedia[],
+  platformsSelected: string[]
+): string | null {
+  const rule = RULES[postType]
+  if (!rule) return null
+
+  if (rule.requiresMedia && media.length === 0)
+    return `${postType === "story" ? "Stories" : postType === "reel" ? "Reels" : "Carrossel"} exigem pelo menos uma mídia.`
+
+  if (rule.onlyVideo && media.some(m => m.type !== "video"))
+    return "Reels aceitam apenas vídeo. Remova a imagem e envie um arquivo de vídeo."
+
+  if (rule.onlyImage && media.some(m => m.type !== "image"))
+    return "Carrossel aceita apenas imagens. Vídeo em carrossel não é suportado pelo Facebook ou Instagram."
+
+  if (postType === "carousel" && media.length === 1)
+    return "Carrossel exige pelo menos 2 imagens."
+
+  if (media.length > rule.maxFiles)
+    return `${postType === "carousel" ? "Carrossel" : "Este formato"} aceita no máximo ${rule.maxFiles} arquivo(s).`
+
+  // Story com vídeo: apenas 1 plataforma não impede, mas vídeo de story no FB
+  // requer upload separado — avisa mas não bloqueia
+  return null
 }
 
 async function uploadFileWithProgress(
@@ -151,6 +196,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
 
   const [charCount, setCharCount] = useState(0)
   const [scheduledDates, setScheduledDates] = useState<string[]>([""])
+  const [mediaError, setMediaError] = useState<string | null>(null)
 
   const dragIndex = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -241,13 +287,32 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
     e.target.value = ""
+
+    const rule = RULES[postType]
+    const maxFiles = rule?.maxFiles ?? 10
+
+    // Bloqueia tipo de arquivo incompatível antes mesmo de fazer upload
+    for (const file of files) {
+      const isVideo = file.type.startsWith("video")
+      const isImage = file.type.startsWith("image")
+      if (rule?.onlyVideo && !isVideo) {
+        setMediaError("Reels aceitam apenas vídeo. Selecione um arquivo de vídeo.")
+        return
+      }
+      if (rule?.onlyImage && !isImage) {
+        setMediaError("Carrossel aceita apenas imagens. Vídeo em carrossel não é suportado pelo Facebook ou Instagram.")
+        return
+      }
+    }
+
     const oversized = files.find((f) => f.size > MAX_SIZE_BYTES)
     if (oversized) {
-      setError(`"${oversized.name}" excede o limite de ${MAX_SIZE_MB}MB.`)
+      setMediaError(`"${oversized.name}" excede o limite de ${MAX_SIZE_MB}MB.`)
       return
     }
+    setMediaError(null)
     setError(null)
-    const maxFiles = postType === "carousel" ? 10 : 1
+
     const toUpload = files.slice(0, maxFiles - uploadedMedia.length)
     for (const file of toUpload) {
       setUploading(true)
@@ -257,9 +322,15 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
       setMediaPreviews((prev) => [...prev, localPreview].slice(0, maxFiles))
       try {
         const uploaded = await uploadFileWithProgress(file, (pct) => setUploadProgress(pct))
-        setUploadedMedia((prev) => [...prev, uploaded].slice(0, maxFiles))
+        setUploadedMedia((prev) => {
+          const next = [...prev, uploaded].slice(0, maxFiles)
+          // Valida após adicionar
+          const err = validateMedia(postType, next, accountIds)
+          setMediaError(err)
+          return next
+        })
       } catch (err: any) {
-        setError(err.message || "Erro ao fazer upload da mídia")
+        setMediaError(err.message || "Erro ao fazer upload da mídia")
         setMediaPreviews((prev) => prev.filter((p) => p !== localPreview))
       } finally {
         setUploading(false)
@@ -294,7 +365,11 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
   }
 
   const removeMedia = (idx: number) => {
-    setUploadedMedia((prev) => prev.filter((_, i) => i !== idx))
+    setUploadedMedia((prev) => {
+      const next = prev.filter((_, i) => i !== idx)
+      setMediaError(validateMedia(postType, next, accountIds))
+      return next
+    })
     setMediaPreviews((prev) => prev.filter((_, i) => i !== idx))
   }
 
@@ -343,16 +418,11 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
       return
     }
 
-    // Reels exigem obrigatoriamente um vídeo
-    if (data.postType === "reel") {
-      if (uploadedMedia.length === 0) {
-        setError("Reels exigem um arquivo de vídeo.")
-        return
-      }
-      if (uploadedMedia.some((m) => m.type !== "video")) {
-        setError("Reels só aceitam vídeo. Remova a imagem e envie um arquivo de vídeo.")
-        return
-      }
+    // Validação final de compatibilidade de mídia (barreira de segurança antes de enviar)
+    const mediaValidationError = validateMedia(data.postType, uploadedMedia, data.accountIds)
+    if (mediaValidationError) {
+      setMediaError(mediaValidationError)
+      return
     }
     setSubmitting(true)
     setError(null)
@@ -478,9 +548,9 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
   }
 
   const isUploading = uploading || uploadingCover
-  const canSubmit = !isUploading && !submitting && accounts.length > 0
+  const canSubmit = !isUploading && !submitting && accounts.length > 0 && !mediaError
 
-  // ── Salvar rascunho ────────────────────────────────────────────────────────
+  // ── Salvar rascunho ──���─────────────────────────────────────────────────────
   const handleSaveDraft = async () => {
     if (isUploading) {
       setError("Aguarde o upload da mídia terminar antes de salvar.")
@@ -614,11 +684,22 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
                           value={postType}
                           onValueChange={(v) => {
                             setValue("postType", v as any)
-                            if (!isEditMode) {
+                            // Ao trocar tipo, verifica se a mídia atual ainda é compatível.
+                            // Se não for, limpa tudo para evitar erros silenciosos.
+                            const newRule = RULES[v]
+                            const incompatible = uploadedMedia.some(m =>
+                              (newRule?.onlyVideo && m.type !== "video") ||
+                              (newRule?.onlyImage && m.type !== "image")
+                            )
+                            if (incompatible || !isEditMode) {
                               setUploadedMedia([])
                               setMediaPreviews([])
                               setCoverPreview(null)
                               setUploadedCover(null)
+                              setMediaError(null)
+                            } else {
+                              // Mídia compatível — revalida contagem e requisitos
+                              setMediaError(validateMedia(v, uploadedMedia, accountIds))
                             }
                           }}
                         >
@@ -640,10 +721,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
                         <Label>
                           Mídia
                           <span className="text-xs text-muted-foreground ml-2 font-normal">
-                            máx. {MAX_SIZE_MB}MB
-                            {postType === "reel" && " · somente vídeo"}
-                            {(postType === "feed" || postType === "story") && " · imagem ou vídeo"}
-                            {postType === "carousel" && " · imagens e vídeos · até 10 itens"}
+                            {RULES[postType]?.hint && `${RULES[postType].hint} · `}máx. {MAX_SIZE_MB}MB
                           </span>
                         </Label>
 
@@ -714,6 +792,13 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
                             </div>
                             <p className="text-xs text-muted-foreground">Aguarde o upload terminar para continuar.</p>
                           </div>
+                        )}
+
+                        {mediaError && (
+                          <p className="text-xs text-destructive flex items-start gap-1.5">
+                            <span className="mt-0.5">⚠</span>
+                            {mediaError}
+                          </p>
                         )}
 
                         <input
@@ -924,7 +1009,7 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
                 <Button
                   type="submit"
                   form="post-form"
-                  disabled={isUploading || submitting || savingDraft}
+                  disabled={!canSubmit || savingDraft}
                   className="gap-2 min-w-32"
                 >
                   {isUploading ? (
