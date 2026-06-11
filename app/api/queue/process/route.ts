@@ -107,17 +107,24 @@ async function finalizeQueueItem(queueId: string, postId: string) {
       COUNT(pt.id)::int                                        AS total,
       COUNT(pt.id) FILTER (WHERE pt.status = 'published')::int AS published,
       COUNT(pt.id) FILTER (WHERE pt.status = 'failed')::int    AS failed,
-      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int   AS pending
+      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int   AS pending,
+      pq.attempts,
+      pq.max_attempts
     FROM post_targets pt
+    CROSS JOIN (SELECT attempts, max_attempts FROM post_queue WHERE id = ${queueId}) pq
     WHERE pt.post_id = ${postId}
+    GROUP BY pq.attempts, pq.max_attempts
   `
   const stats = rows[0]
   const total: number = stats?.total ?? 0
   const published: number = stats?.published ?? 0
   const failed: number = stats?.failed ?? 0
   const pending: number = stats?.pending ?? 0
+  const attempts: number = stats?.attempts ?? 0
+  const maxAttempts: number = stats?.max_attempts ?? 3
+  const hasRetries = attempts < maxAttempts
 
-  // Ainda há targets não resolvidos — mantém como pending para próxima rodada
+  // Ainda há targets pendentes — reagenda para próxima rodada
   if (pending > 0) {
     await sql`
       UPDATE post_queue SET status = 'pending', updated_at = NOW()
@@ -131,7 +138,7 @@ async function finalizeQueueItem(queueId: string, postId: string) {
   }
 
   if (published === total && total > 0) {
-    // Todos publicados
+    // Todos publicados com sucesso
     await sql`
       UPDATE post_queue SET status = 'done', updated_at = NOW()
       WHERE id = ${queueId}
@@ -147,7 +154,25 @@ async function finalizeQueueItem(queueId: string, postId: string) {
     return
   }
 
-  // Há falhas — coleta os erros reais persistidos nos targets
+  // Há targets com falha. Se ainda há tentativas disponíveis, reseta os targets
+  // falhos para 'pending' e reagenda — a próxima execução do cron os retentará.
+  if (hasRetries && failed > 0) {
+    await sql`
+      UPDATE post_targets SET status = 'pending', error_message = NULL
+      WHERE post_id = ${postId} AND status = 'failed'
+    `
+    await sql`
+      UPDATE post_queue SET status = 'pending', updated_at = NOW()
+      WHERE id = ${queueId}
+    `
+    await sql`
+      UPDATE posts SET status = 'scheduled', updated_at = NOW()
+      WHERE id = ${postId}
+    `
+    return
+  }
+
+  // Sem tentativas restantes — coleta os erros reais e marca como falha definitiva
   const failedRows = await sql`
     SELECT sa.platform, pt.error_message
     FROM post_targets pt

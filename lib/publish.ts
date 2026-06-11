@@ -126,7 +126,8 @@ export async function publishToInstagram(item: {
     let mediaType: string
     if (isReel) mediaType = "REELS"
     else if (isStory) mediaType = "STORIES"
-    else if (isVideo) mediaType = "VIDEO"
+    // A API do Instagram não aceita "VIDEO" para feed desde 2024 — todo vídeo de feed é tratado como Reel
+    else if (isVideo) mediaType = "REELS"
     else mediaType = "IMAGE"
 
     const containerParams: Record<string, string | boolean> = { media_type: mediaType }
