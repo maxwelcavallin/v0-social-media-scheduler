@@ -18,21 +18,45 @@ export async function publishToFacebook(item: {
   if (isStory) {
     if (!media_urls || media_urls.length === 0) throw new Error("Stories no Facebook exigem mídia.")
     const isVideo = media_types?.[0] === "video"
-    const endpoint = isVideo
-      ? `${GRAPH_API}/${page_id}/video_stories`
-      : `${GRAPH_API}/${page_id}/photo_stories`
-    const body: Record<string, string> = isVideo
-      ? { video_url: media_urls[0], access_token }
-      : { url: media_urls[0], access_token }
-    if (isVideo) body.upload_phase = "finish"
-    const res = await fetch(endpoint, {
+
+    if (!isVideo) {
+      // Foto: endpoint simples /photo_stories com url
+      const res = await fetch(`${GRAPH_API}/${page_id}/photo_stories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: media_urls[0], access_token }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error.message)
+      return data.id || data.post_id
+    }
+
+    // Vídeo: a Graph API exige upload em 2 fases:
+    // Fase 1 — inicia o upload e obtém o video_id
+    const startRes = await fetch(`${GRAPH_API}/${page_id}/video_stories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ upload_phase: "start", access_token }),
     })
-    const data = await res.json()
-    if (data.error) throw new Error(data.error.message)
-    return data.id || data.post_id
+    const startData = await startRes.json()
+    if (startData.error) throw new Error(`FB story fase start: ${startData.error.message}`)
+    const videoId: string = startData.video_id
+    if (!videoId) throw new Error("FB story: video_id não retornado na fase start")
+
+    // Fase 2 — finaliza com o video_url e o video_id obtido na fase start
+    const finishRes = await fetch(`${GRAPH_API}/${page_id}/video_stories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        upload_phase: "finish",
+        video_id: videoId,
+        video_url: media_urls[0],
+        access_token,
+      }),
+    })
+    const finishData = await finishRes.json()
+    if (finishData.error) throw new Error(`FB story fase finish: ${finishData.error.message}`)
+    return finishData.id || finishData.post_id || videoId
   }
 
   // ── Reel no Facebook ─────────────────────────────────────────────────────────
