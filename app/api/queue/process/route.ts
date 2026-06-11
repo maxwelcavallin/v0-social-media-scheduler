@@ -287,6 +287,7 @@ async function processQueue() {
             content: item.content,
             media_urls: item.media_urls,
             media_types: item.media_types,
+            post_type: target.post_type,
           })
         } else if (target.platform === "instagram") {
           platformPostId = await publishToInstagram({

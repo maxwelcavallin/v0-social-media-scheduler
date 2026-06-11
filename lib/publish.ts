@@ -7,9 +7,53 @@ export async function publishToFacebook(item: {
   content: string
   media_urls: string[] | null
   media_types: string[] | null
+  post_type?: string
 }): Promise<string> {
-  const { access_token, page_id, content, media_urls, media_types } = item
+  const { access_token, page_id, content, media_urls, media_types, post_type } = item
+  const isStory = post_type === "story"
+  const isReel = post_type === "reel"
 
+  // ── Story no Facebook ────────────────────────────────────────────────────────
+  // Stories exigem endpoint dedicado e não aceitam carousel nem texto.
+  if (isStory) {
+    if (!media_urls || media_urls.length === 0) throw new Error("Stories no Facebook exigem mídia.")
+    const isVideo = media_types?.[0] === "video"
+    const endpoint = isVideo
+      ? `${GRAPH_API}/${page_id}/video_stories`
+      : `${GRAPH_API}/${page_id}/photo_stories`
+    const body: Record<string, string> = isVideo
+      ? { video_url: media_urls[0], access_token }
+      : { url: media_urls[0], access_token }
+    if (isVideo) body.upload_phase = "finish"
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (data.error) throw new Error(data.error.message)
+    return data.id || data.post_id
+  }
+
+  // ── Reel no Facebook ─────────────────────────────────────────────────────────
+  if (isReel) {
+    if (!media_urls || media_urls.length === 0) throw new Error("Reels no Facebook exigem um vídeo.")
+    const res = await fetch(`${GRAPH_API}/${page_id}/video_reels`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_url: media_urls[0],
+        description: content,
+        upload_phase: "finish",
+        access_token,
+      }),
+    })
+    const data = await res.json()
+    if (data.error) throw new Error(data.error.message)
+    return data.id || data.post_id
+  }
+
+  // ── Feed (foto/vídeo/carrossel) ──────────────────────────────────────────────
   if (!media_urls || media_urls.length === 0) {
     const res = await fetch(`${GRAPH_API}/${page_id}/feed`, {
       method: "POST",

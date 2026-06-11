@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
               content,
               media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
               media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
+              post_type: postType,
             })
           } else if (target.platform === "instagram") {
             platformPostId = await publishToInstagram({
