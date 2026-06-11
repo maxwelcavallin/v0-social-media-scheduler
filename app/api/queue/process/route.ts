@@ -50,13 +50,15 @@ async function reconcileResolvedPosts() {
        AND COUNT(pt.id) > 0
   `
 
+  console.log(`[queue/reconcile] posts presos encontrados: ${stuck.length}`)
+
   for (const row of stuck) {
     const total: number = row.total ?? 0
     const published: number = row.published ?? 0
     const failed: number = row.failed ?? 0
 
     if (published === total) {
-      // Todos os targets publicados — finaliza o post
+      console.log(`[queue/reconcile] post ${row.post_id} reparado → published (${published}/${total})`)
       await sql`
         UPDATE posts
         SET status = 'published',
@@ -70,7 +72,6 @@ async function reconcileResolvedPosts() {
         WHERE post_id = ${row.post_id}
       `
     } else {
-      // Há falhas (total ou parcial)
       const failedRows = await sql`
         SELECT sa.platform, pt.error_message
         FROM post_targets pt
@@ -85,6 +86,7 @@ async function reconcileResolvedPosts() {
           ? `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${errDetails}`
           : errDetails || "Falha ao publicar (motivo desconhecido)"
 
+      console.log(`[queue/reconcile] post ${row.post_id} reparado → failed. ${errorMessage}`)
       await sql`
         UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW()
         WHERE id = ${row.post_id}
@@ -198,12 +200,11 @@ async function finalizeQueueItem(queueId: string, postId: string) {
 }
 
 async function processQueue() {
+  console.log("[queue/process] iniciando execução", new Date().toISOString())
+
   // 1. Reconcilia posts presos de execuções anteriores
   await reconcileResolvedPosts()
 
-  // 2. Busca itens pendentes cuja janela de agendamento chegou.
-  //    Não filtra por attempts < max_attempts — a reconciliação cuida dos que
-  //    esgotaram tentativas sem finalizar.
   const pendingItems = await sql`
     SELECT
       pq.id           AS queue_id,
@@ -225,9 +226,120 @@ async function processQueue() {
     LIMIT 3
   `
 
+  console.log(`[queue/process] itens pendentes encontrados: ${pendingItems.length}`)
+
   if (pendingItems.length === 0) {
     return NextResponse.json({ processed: 0, results: [] })
   }
+
+  const results = []
+
+  for (const item of pendingItems) {
+    console.log(`[queue/process] processando post ${item.post_id} (tentativa ${item.attempts + 1}/${item.max_attempts})`)
+
+    await sql`
+      UPDATE post_queue
+      SET status = 'processing', attempts = attempts + 1, updated_at = NOW()
+      WHERE id = ${item.queue_id}
+    `
+
+    const targets = await sql`
+      SELECT
+        pt.id           AS target_id,
+        pt.post_type,
+        sa.platform,
+        sa.account_id,
+        sa.page_id,
+        sa.access_token
+      FROM post_targets pt
+      JOIN social_accounts sa ON sa.id = pt.social_account_id
+      WHERE pt.post_id = ${item.post_id}
+        AND pt.status = 'pending'
+        AND (sa.needs_reconnect IS NULL OR sa.needs_reconnect = false)
+    `
+
+    console.log(`[queue/process] targets disponíveis para publicar: ${targets.length}`)
+
+    const allPendingTargets = await sql`
+      SELECT COUNT(*)::int AS cnt
+      FROM post_targets pt
+      WHERE pt.post_id = ${item.post_id} AND pt.status = 'pending'
+    `
+    const totalPending = allPendingTargets[0]?.cnt ?? 0
+    if (targets.length === 0 && totalPending > 0) {
+      console.log(`[queue/process] post ${item.post_id} ignorado — conta(s) precisam reconexão`)
+      await sql`
+        UPDATE post_queue
+        SET status = 'pending', attempts = attempts - 1, updated_at = NOW()
+        WHERE id = ${item.queue_id}
+      `
+      results.push({ queueId: item.queue_id, postId: item.post_id, skipped: true, reason: "needs_reconnect" })
+      continue
+    }
+
+    if (targets.length === 0 && totalPending === 0) {
+      console.log(`[queue/process] post ${item.post_id} sem targets pendentes — finalizando direto`)
+      await finalizeQueueItem(item.queue_id, item.post_id)
+      results.push({ queueId: item.queue_id, postId: item.post_id, targetsProcessed: 0 })
+      continue
+    }
+
+    for (const target of targets) {
+      console.log(`[queue/process] publicando em ${target.platform} (post_type: ${target.post_type}) para post ${item.post_id}`)
+      try {
+        let platformPostId: string | null = null
+
+        if (target.platform === "facebook") {
+          platformPostId = await publishToFacebook({
+            access_token: target.access_token,
+            page_id: target.page_id,
+            content: item.content,
+            media_urls: item.media_urls,
+            media_types: item.media_types,
+            post_type: target.post_type,
+          })
+        } else if (target.platform === "instagram") {
+          platformPostId = await publishToInstagram({
+            access_token: target.access_token,
+            account_id: target.account_id,
+            page_id: target.page_id,
+            content: item.content,
+            media_urls: item.media_urls,
+            media_types: item.media_types,
+            post_type: target.post_type,
+            cover_url: item.cover_url ?? null,
+          })
+        }
+
+        console.log(`[queue/process] ${target.platform} publicado com sucesso. platform_post_id: ${platformPostId}`)
+        await sql`
+          UPDATE post_targets
+          SET status = 'published', platform_post_id = ${platformPostId}
+          WHERE id = ${target.target_id}
+        `
+      } catch (err: any) {
+        const errMsg = err?.message || String(err)
+        console.error(`[queue/process] erro ao publicar em ${target.platform}: ${errMsg}`)
+        await sql`
+          UPDATE post_targets
+          SET status = 'failed', error_message = ${errMsg}
+          WHERE id = ${target.target_id}
+        `
+      }
+    }
+
+    await finalizeQueueItem(item.queue_id, item.post_id)
+
+    results.push({
+      queueId: item.queue_id,
+      postId: item.post_id,
+      targetsProcessed: targets.length,
+    })
+  }
+
+  console.log(`[queue/process] concluído. processados: ${results.length}`)
+  return NextResponse.json({ processed: results.length, results })
+}
 
   const results = []
 
