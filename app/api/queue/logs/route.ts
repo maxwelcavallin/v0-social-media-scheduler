@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import sql from "@/lib/db"
-import { getSession } from "@/lib/auth"
+import { getSession } from "@/lib/session"
 
 export async function GET(request: NextRequest) {
   const session = await getSession()
