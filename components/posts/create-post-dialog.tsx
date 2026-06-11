@@ -201,6 +201,9 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
   const dragIndex = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
+  // Controla se a mídia já foi pré-populada para o post atual em modo edição.
+  // Evita re-popular quando o dialog reabre ou outros estados mudam.
+  const populatedForPostId = useRef<string | null>(null)
 
   const minDate = new Date()
   minDate.setMinutes(minDate.getMinutes() + 5)
@@ -229,32 +232,45 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
   const accountIds = watch("accountIds") || []
   const postType = watch("postType")
 
-  // Pré-popular mídia existente no modo edição
+  // Pré-popular mídia existente no modo edição — executa APENAS UMA VEZ por post.
+  // Usar um ref de controle evita re-popular quando outros estados mudam (ex: upload
+  // dispara re-render que poderia reexecutar o efeito, duplicando a mídia).
   useEffect(() => {
-    if (editPost && (editOpen || open)) {
-      if (editPost.media && editPost.media.length > 0) {
-        setUploadedMedia(editPost.media.map(m => ({
-          url: m.url,
-          type: m.media_type === "video" ? "video" : "image",
-          name: m.url.split("/").pop() || "media",
-        })))
-        setMediaPreviews(editPost.media.map(m => m.url))
-      } else {
-        setUploadedMedia([])
-        setMediaPreviews([])
+    const isDialogOpen = editOpen || open
+    if (!editPost || !isDialogOpen) {
+      // Dialog fechado: reseta o controle para que na próxima abertura pré-popule novamente
+      if (!isDialogOpen) {
+        populatedForPostId.current = null
       }
-      if (editPost.cover_url) {
-        setCoverPreview(editPost.cover_url)
-        setUploadedCover({ url: editPost.cover_url, type: "image", name: "cover" })
-      } else {
-        setCoverPreview(null)
-        setUploadedCover(null)
-      }
-      if (defaultScheduledAt) {
-        setScheduledDates([defaultScheduledAt])
-      }
-      setCharCount(defaultContent.length)
+      return
     }
+
+    // Já pré-populado para este post nesta abertura — não faz nada
+    if (populatedForPostId.current === editPost.id) return
+    populatedForPostId.current = editPost.id
+
+    if (editPost.media && editPost.media.length > 0) {
+      setUploadedMedia(editPost.media.map(m => ({
+        url: m.url,
+        type: m.media_type === "video" ? "video" : "image",
+        name: m.url.split("/").pop() || "media",
+      })))
+      setMediaPreviews(editPost.media.map(m => m.url))
+    } else {
+      setUploadedMedia([])
+      setMediaPreviews([])
+    }
+    if (editPost.cover_url) {
+      setCoverPreview(editPost.cover_url)
+      setUploadedCover({ url: editPost.cover_url, type: "image", name: "cover" })
+    } else {
+      setCoverPreview(null)
+      setUploadedCover(null)
+    }
+    if (defaultScheduledAt) {
+      setScheduledDates([defaultScheduledAt])
+    }
+    setCharCount(defaultContent.length)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOpen, open, editPost?.id])
 
@@ -390,8 +406,10 @@ export function CreatePostDialog({ workspaceId, accounts, children, trigger, edi
     setCoverPreview(null)
     setUploadedCover(null)
     setError(null)
+    setMediaError(null)
     setCharCount(0)
     setScheduledDates([""])
+    populatedForPostId.current = null
   }
 
   const handleClose = (v: boolean) => {
