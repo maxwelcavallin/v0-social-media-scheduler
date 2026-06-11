@@ -16,6 +16,7 @@ import {
   Shield,
   Mic,
   Plug2,
+  ScrollText,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -70,6 +71,7 @@ const navItems = [
   { href: "/dashboard/posts", label: "Posts geral", icon: ImageIcon },
   { href: "/dashboard/tts", label: "Text to Voice", icon: Mic },
   { href: "/dashboard/plans", label: "Planos", icon: Zap },
+  { href: "/dashboard/queue-logs", label: "Logs da Fila", icon: ScrollText },
   { href: "/dashboard/settings", label: "Configurações", icon: Settings },
 ]
 

@@ -5,6 +5,33 @@ import { publishToFacebook, publishToInstagram, GRAPH_API, GRAPH_IG } from "@/li
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300
 
+// ─── Logger persistente ───────────────────────────────────────────────────────
+// Grava logs diretamente no banco (tabela queue_logs) para que fiquem
+// acessíveis independente do runtime da Vercel (Fluid não exibe console.log).
+type LogLevel = "info" | "error" | "warn"
+
+async function qlog(
+  level: LogLevel,
+  message: string,
+  meta?: { post_id?: string; queue_id?: string; platform?: string; details?: Record<string, unknown> }
+) {
+  try {
+    await sql`
+      INSERT INTO queue_logs (level, message, post_id, queue_id, platform, details)
+      VALUES (
+        ${level},
+        ${message},
+        ${meta?.post_id ?? null},
+        ${meta?.queue_id ?? null},
+        ${meta?.platform ?? null},
+        ${meta?.details ? JSON.stringify(meta.details) : null}
+      )
+    `
+  } catch {
+    // Nunca deixar o logger quebrar a execução principal
+  }
+}
+
 // GET — called by Vercel Cron every 5 minutes
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization")
@@ -198,12 +225,10 @@ async function finalizeQueueItem(queueId: string, postId: string) {
 }
 
 async function processQueue() {
-  // 1. Reconcilia posts presos de execuções anteriores
+  await qlog("info", `cron iniciado — ${new Date().toISOString()}`)
+
   await reconcileResolvedPosts()
 
-  // 2. Busca itens pendentes cuja janela de agendamento chegou.
-  //    Não filtra por attempts < max_attempts — a reconciliação cuida dos que
-  //    esgotaram tentativas sem finalizar.
   const pendingItems = await sql`
     SELECT
       pq.id           AS queue_id,
@@ -225,6 +250,8 @@ async function processQueue() {
     LIMIT 3
   `
 
+  await qlog("info", `itens pendentes: ${pendingItems.length}`)
+
   if (pendingItems.length === 0) {
     return NextResponse.json({ processed: 0, results: [] })
   }
@@ -232,16 +259,18 @@ async function processQueue() {
   const results = []
 
   for (const item of pendingItems) {
-    // Marca como processing IMEDIATAMENTE para evitar double-execution
+    await qlog("info", `processando post (tentativa ${item.attempts + 1}/${item.max_attempts})`, {
+      post_id: item.post_id,
+      queue_id: item.queue_id,
+      details: { media_urls: item.media_urls, media_types: item.media_types },
+    })
+
     await sql`
       UPDATE post_queue
       SET status = 'processing', attempts = attempts + 1, updated_at = NOW()
       WHERE id = ${item.queue_id}
     `
 
-    // Busca APENAS os targets ainda pending E cuja conta NÃO precisa de reconexão.
-    // Contas com needs_reconnect = true não têm token válido — tentar publicar
-    // consumiria uma tentativa e marcaria o post como failed sem motivo real.
     const targets = await sql`
       SELECT
         pt.id           AS target_id,
@@ -257,8 +286,11 @@ async function processQueue() {
         AND (sa.needs_reconnect IS NULL OR sa.needs_reconnect = false)
     `
 
-    // Se todos os targets pendentes são de contas que precisam reconexão,
-    // libera o item da fila sem consumir tentativa e aguarda reconexão do usuário.
+    await qlog("info", `targets disponíveis: ${targets.length}`, {
+      post_id: item.post_id,
+      queue_id: item.queue_id,
+    })
+
     const allPendingTargets = await sql`
       SELECT COUNT(*)::int AS cnt
       FROM post_targets pt
@@ -266,7 +298,10 @@ async function processQueue() {
     `
     const totalPending = allPendingTargets[0]?.cnt ?? 0
     if (targets.length === 0 && totalPending > 0) {
-      // Reverte o status para 'pending' sem incrementar attempts (a conta precisa reconexão)
+      await qlog("warn", "pulado — conta(s) precisam reconexão", {
+        post_id: item.post_id,
+        queue_id: item.queue_id,
+      })
       await sql`
         UPDATE post_queue
         SET status = 'pending', attempts = attempts - 1, updated_at = NOW()
@@ -277,6 +312,11 @@ async function processQueue() {
     }
 
     for (const target of targets) {
+      await qlog("info", `publicando em ${target.platform} (post_type: ${target.post_type})`, {
+        post_id: item.post_id,
+        queue_id: item.queue_id,
+        platform: target.platform,
+      })
       try {
         let platformPostId: string | null = null
 
@@ -302,6 +342,11 @@ async function processQueue() {
           })
         }
 
+        await qlog("info", `publicado com sucesso em ${target.platform}. platform_post_id: ${platformPostId}`, {
+          post_id: item.post_id,
+          queue_id: item.queue_id,
+          platform: target.platform,
+        })
         await sql`
           UPDATE post_targets
           SET status = 'published', platform_post_id = ${platformPostId}
@@ -309,7 +354,12 @@ async function processQueue() {
         `
       } catch (err: any) {
         const errMsg = err?.message || String(err)
-
+        await qlog("error", `falha ao publicar em ${target.platform}: ${errMsg}`, {
+          post_id: item.post_id,
+          queue_id: item.queue_id,
+          platform: target.platform,
+          details: { error: errMsg, post_type: target.post_type },
+        })
         await sql`
           UPDATE post_targets
           SET status = 'failed', error_message = ${errMsg}
@@ -318,7 +368,6 @@ async function processQueue() {
       }
     }
 
-    // Finaliza consultando o estado real de TODOS os targets (fonte de verdade)
     await finalizeQueueItem(item.queue_id, item.post_id)
 
     results.push({
@@ -328,6 +377,7 @@ async function processQueue() {
     })
   }
 
+  await qlog("info", `cron concluído — processados: ${results.length}`)
   return NextResponse.json({ processed: results.length, results })
 }
 
