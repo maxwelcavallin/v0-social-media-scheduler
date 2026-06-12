@@ -6,6 +6,28 @@ import { getAppUrl } from "@/lib/app-url"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
 
+// Valida se um Page Access Token é realmente um page token funcional.
+// Um page token legítimo responde a /me com o id da página. Tokens degradados
+// (ex: obtidos via Business Manager sem permissões de página concedidas)
+// falham com erro 190 "impersonating a user's page" — esses NÃO devem ser salvos,
+// pois causam falha em toda publicação (feed, reel, story).
+async function isValidPageToken(pageId: string, pageToken: string): Promise<{ valid: boolean; reason?: string }> {
+  try {
+    const res = await fetch(`${GRAPH_API}/me?fields=id,name&access_token=${pageToken}`)
+    const data = await res.json()
+    if (data.error) {
+      return { valid: false, reason: `${data.error.message} [${data.error.code}]` }
+    }
+    // O /me de um page token deve retornar o próprio id da página
+    if (data.id && data.id !== pageId) {
+      return { valid: false, reason: `token não corresponde à página (esperado ${pageId}, recebido ${data.id})` }
+    }
+    return { valid: true }
+  } catch (e) {
+    return { valid: false, reason: e instanceof Error ? e.message : "erro de rede" }
+  }
+}
+
 // Insert or update a social account
 async function upsertAccount(fields: {
   workspaceId: string
@@ -233,6 +255,7 @@ export async function POST(request: NextRequest) {
     // Step 6: Save pages and linked Instagram accounts
     console.log("[v0] meta/process step6: salvando", pages.length, "páginas")
     const saved: { platform: string; name: string }[] = []
+    const rejected: { name: string; reason: string }[] = [] // páginas com token inválido
     const reconnectedAccountIds: string[] = [] // IDs das contas atualizadas para reatender posts falhos
 
     for (const page of pages) {
@@ -241,10 +264,22 @@ export async function POST(request: NextRequest) {
       // Nunca fazer fallback para o userToken, pois causaria erro 190 ao tentar publicar.
       if (!page.access_token) {
         console.warn("[v0] meta/process: página", page.id, page.name, "sem page token — pulando")
+        rejected.push({ name: page.name, reason: "sem page token (permissões não concedidas)" })
         continue
       }
       const pageToken = page.access_token
-      console.log("[v0] meta/process: salvando página", page.name, "pageToken presente:", !!pageToken, "token prefix:", pageToken?.substring(0, 8))
+
+      // VALIDAÇÃO CRÍTICA: confirmar que o page token funciona ANTES de salvar.
+      // Tokens degradados (sem permissões de página efetivamente concedidas) passam
+      // pela verificação de existência mas falham em toda publicação com erro 190.
+      const validation = await isValidPageToken(page.id, pageToken)
+      if (!validation.valid) {
+        console.warn("[v0] meta/process: página", page.id, page.name, "token INVÁLIDO — pulando. Motivo:", validation.reason)
+        rejected.push({ name: page.name, reason: validation.reason || "token inválido" })
+        continue
+      }
+
+      console.log("[v0] meta/process: salvando página", page.name, "pageToken válido. prefix:", pageToken?.substring(0, 8))
 
       await upsertAccount({
         workspaceId,
@@ -340,7 +375,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, saved, count: saved.length })
+    // Se nenhuma página foi salva mas algumas foram rejeitadas por token inválido,
+    // informa o usuário com o motivo exato para que ele possa corrigir as permissões.
+    if (saved.length === 0 && rejected.length > 0) {
+      const detalhes = rejected.map((r) => `${r.name}: ${r.reason}`).join("; ")
+      return NextResponse.json({
+        error: `Não foi possível conectar as páginas pois o token retornado pelo Facebook não tem as permissões de página efetivas. Ao reconectar, na tela do Facebook clique em "Editar acesso" e MARQUE TODAS as páginas e permissões solicitadas. Detalhes: ${detalhes}`,
+      }, { status: 400 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      saved,
+      count: saved.length,
+      ...(rejected.length > 0 ? { rejected, warning: `${rejected.length} página(s) ignorada(s) por token inválido — verifique as permissões.` } : {}),
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro desconhecido"
     return NextResponse.json({ error: message }, { status: 500 })
