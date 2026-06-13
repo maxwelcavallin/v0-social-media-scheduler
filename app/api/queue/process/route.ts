@@ -246,7 +246,22 @@ async function processQueue() {
     WHERE pq.status IN ('pending', 'processing')
       AND pq.scheduled_at <= NOW()
       AND pq.attempts < pq.max_attempts
+      -- Só seleciona itens que tenham AO MENOS UM target pendente publicável
+      -- (conta ativa e que não precisa reconexão). Isso evita o head-of-line
+      -- blocking: posts cujos targets dependem todos de contas a reconectar não
+      -- devem ocupar o LIMIT e impedir que posts válidos sejam processados.
+      AND EXISTS (
+        SELECT 1
+        FROM post_targets pt2
+        JOIN social_accounts sa2 ON sa2.id = pt2.social_account_id
+        WHERE pt2.post_id = pq.post_id
+          AND pt2.status = 'pending'
+          AND COALESCE(sa2.needs_reconnect, false) = false
+          AND COALESCE(sa2.is_active, true) = true
+      )
     GROUP BY pq.id, pq.post_id, pq.attempts, pq.max_attempts, p.content, p.workspace_id
+    -- Prioriza os agendamentos mais antigos primeiro
+    ORDER BY MIN(pq.scheduled_at) ASC
     LIMIT 3
   `
 
