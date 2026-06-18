@@ -5,31 +5,27 @@ import { publishToFacebook, publishToInstagram, GRAPH_API, GRAPH_IG } from "@/li
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300
 
-// ─── Logger persistente ───────────────────────────────────────────────────────
-// Grava logs diretamente no banco (tabela queue_logs) para que fiquem
-// acessíveis independente do runtime da Vercel (Fluid não exibe console.log).
+// ─── Logger ───────────────────────────────────────────────────────────────────
+// Escreve nos logs do runtime (visíveis no painel de Logs da Vercel) em vez de
+// gravar no banco. Evita escrita constante no Postgres a cada execução do cron.
 type LogLevel = "info" | "error" | "warn"
 
-async function qlog(
+function qlog(
   level: LogLevel,
   message: string,
   meta?: { post_id?: string; queue_id?: string; platform?: string; details?: Record<string, unknown> }
 ) {
-  try {
-    await sql`
-      INSERT INTO queue_logs (level, message, post_id, queue_id, platform, details)
-      VALUES (
-        ${level},
-        ${message},
-        ${meta?.post_id ?? null},
-        ${meta?.queue_id ?? null},
-        ${meta?.platform ?? null},
-        ${meta?.details ? JSON.stringify(meta.details) : null}
-      )
-    `
-  } catch {
-    // Nunca deixar o logger quebrar a execução principal
-  }
+  const parts = [`[v0][queue]`]
+  if (meta?.post_id) parts.push(`post=${meta.post_id}`)
+  if (meta?.queue_id) parts.push(`queue=${meta.queue_id}`)
+  if (meta?.platform) parts.push(`platform=${meta.platform}`)
+  const prefix = parts.join(" ")
+  const detailsStr = meta?.details ? ` ${JSON.stringify(meta.details)}` : ""
+  const line = `${prefix} ${message}${detailsStr}`
+
+  if (level === "error") console.error(line)
+  else if (level === "warn") console.warn(line)
+  else console.log(line)
 }
 
 // GET — called by Vercel Cron every 5 minutes

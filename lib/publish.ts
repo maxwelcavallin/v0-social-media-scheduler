@@ -31,13 +31,15 @@ export async function publishToFacebook(item: {
       return data.id || data.post_id
     }
 
-    // Vídeo: a Graph API exige upload em 3 fases:
+    // Vídeo: a Graph API exige upload em 3 fases.
+    // IMPORTANTE: os parâmetros upload_phase e video_id DEVEM ir como query
+    // params na URL — enviá-los no JSON body causa "(#100) Missing parameter: video_id".
+
     // Fase 1 — inicia o upload e obtém video_id + upload_url
-    const startRes = await fetch(`${GRAPH_API}/${page_id}/video_stories`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ upload_phase: "start", access_token }),
-    })
+    const startRes = await fetch(
+      `${GRAPH_API}/${page_id}/video_stories?upload_phase=start&access_token=${encodeURIComponent(access_token)}`,
+      { method: "POST" },
+    )
     const startData = await startRes.json()
     if (startData.error) throw new Error(`FB story fase start: ${startData.error.message}`)
     const videoId: string = startData.video_id
@@ -45,8 +47,8 @@ export async function publishToFacebook(item: {
     if (!videoId) throw new Error("FB story: video_id não retornado na fase start")
     if (!uploadUrl) throw new Error("FB story: upload_url não retornado na fase start")
 
-    // Fase 2 — envia o vídeo para o upload_url usando o header file_url
-    // O Facebook baixa o vídeo diretamente da URL fornecida
+    // Fase 2 — envia o vídeo para o upload_url usando o header file_url.
+    // O Facebook baixa o vídeo diretamente da URL fornecida.
     const uploadRes = await fetch(uploadUrl, {
       method: "POST",
       headers: {
@@ -57,37 +59,58 @@ export async function publishToFacebook(item: {
     const uploadData = await uploadRes.json()
     if (uploadData.error) throw new Error(`FB story fase upload: ${uploadData.error.message}`)
 
-    // Fase 3 — finaliza e publica o story
-    const finishRes = await fetch(`${GRAPH_API}/${page_id}/video_stories`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        upload_phase: "finish",
-        video_id: videoId,
-        access_token,
-      }),
-    })
+    // Fase 3 — finaliza e publica o story (video_id como query param)
+    const finishRes = await fetch(
+      `${GRAPH_API}/${page_id}/video_stories?upload_phase=finish&video_id=${encodeURIComponent(videoId)}&access_token=${encodeURIComponent(access_token)}`,
+      { method: "POST" },
+    )
     const finishData = await finishRes.json()
     if (finishData.error) throw new Error(`FB story fase finish: ${finishData.error.message}`)
     return finishData.id || finishData.post_id || videoId
   }
 
   // ── Reel no Facebook ─────────────────────────────────────────────────────────
+  // Assim como o story de vídeo, o reel exige upload em 3 fases.
   if (isReel) {
     if (!media_urls || media_urls.length === 0) throw new Error("Reels no Facebook exigem um vídeo.")
-    const res = await fetch(`${GRAPH_API}/${page_id}/video_reels`, {
+
+    // Fase 1 — inicia o upload e obtém video_id + upload_url
+    const startRes = await fetch(
+      `${GRAPH_API}/${page_id}/video_reels?upload_phase=start&access_token=${encodeURIComponent(access_token)}`,
+      { method: "POST" },
+    )
+    const startData = await startRes.json()
+    if (startData.error) throw new Error(`FB reel fase start: ${startData.error.message}`)
+    const videoId: string = startData.video_id
+    const uploadUrl: string = startData.upload_url
+    if (!videoId) throw new Error("FB reel: video_id não retornado na fase start")
+    if (!uploadUrl) throw new Error("FB reel: upload_url não retornado na fase start")
+
+    // Fase 2 — envia o vídeo para o upload_url usando o header file_url
+    const uploadRes = await fetch(uploadUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        file_url: media_urls[0],
-        description: content,
-        upload_phase: "finish",
-        access_token,
-      }),
+      headers: {
+        "Authorization": `OAuth ${access_token}`,
+        "file_url": media_urls[0],
+      },
     })
-    const data = await res.json()
-    if (data.error) throw new Error(data.error.message)
-    return data.id || data.post_id
+    const uploadData = await uploadRes.json()
+    if (uploadData.error) throw new Error(`FB reel fase upload: ${uploadData.error.message}`)
+
+    // Fase 3 — finaliza e publica o reel (parâmetros como query params)
+    const params = new URLSearchParams({
+      upload_phase: "finish",
+      video_id: videoId,
+      video_state: "PUBLISHED",
+      description: content || "",
+      access_token,
+    })
+    const finishRes = await fetch(`${GRAPH_API}/${page_id}/video_reels?${params.toString()}`, {
+      method: "POST",
+    })
+    const finishData = await finishRes.json()
+    if (finishData.error) throw new Error(`FB reel fase finish: ${finishData.error.message}`)
+    return finishData.id || finishData.post_id || videoId
   }
 
   // ── Feed (foto/vídeo/carrossel) ──────────────────────────────────────────────
