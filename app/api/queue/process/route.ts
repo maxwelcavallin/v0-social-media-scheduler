@@ -28,6 +28,23 @@ function qlog(
   else console.log(line)
 }
 
+// Detecta erros de token/permissão do Facebook/Instagram (OAuthException código 190
+// e variações de "impersonating a user's page"). Esses erros significam que o token
+// da conta está inválido/degradado — não adianta retentar; a conta precisa reconexão.
+function isTokenError(message: string): boolean {
+  if (!message) return false
+  const m = message.toLowerCase()
+  return (
+    m.includes("[190]") ||
+    m.includes("impersonating a user") ||
+    m.includes("must be granted before") ||
+    m.includes("session has been invalidated") ||
+    m.includes("access token") && m.includes("expired") ||
+    m.includes("error validating access token") ||
+    m.includes("oauthexception")
+  )
+}
+
 // GET — called by Vercel Cron every 5 minutes
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization")
@@ -284,8 +301,9 @@ async function processQueue() {
 
     const targets = await sql`
       SELECT
-        pt.id           AS target_id,
+        pt.id               AS target_id,
         pt.post_type,
+        pt.social_account_id,
         sa.platform,
         sa.account_id,
         sa.page_id,
@@ -365,17 +383,41 @@ async function processQueue() {
         `
       } catch (err: any) {
         const errMsg = err?.message || String(err)
-        await qlog("error", `falha ao publicar em ${target.platform}: ${errMsg}`, {
-          post_id: item.post_id,
-          queue_id: item.queue_id,
-          platform: target.platform,
-          details: { error: errMsg, post_type: target.post_type },
-        })
-        await sql`
-          UPDATE post_targets
-          SET status = 'failed', error_message = ${errMsg}
-          WHERE id = ${target.target_id}
-        `
+
+        if (isTokenError(errMsg)) {
+          // Token inválido/degradado: marca a conta para reconexão e mantém o
+          // target PENDENTE (não 'failed'). Assim o post não é morto — ele fica
+          // aguardando o usuário reconectar a conta, e o cron deixa de tentar
+          // publicar com o token quebrado (consumindo tentativas em vão).
+          await qlog("warn", `token inválido em ${target.platform} — marcando conta para reconexão`, {
+            post_id: item.post_id,
+            queue_id: item.queue_id,
+            platform: target.platform,
+            details: { error: errMsg, social_account_id: target.social_account_id },
+          })
+          await sql`
+            UPDATE social_accounts
+            SET needs_reconnect = true, updated_at = NOW()
+            WHERE id = ${target.social_account_id}
+          `
+          await sql`
+            UPDATE post_targets
+            SET status = 'pending', error_message = ${"Conta precisa reconexão: " + errMsg}
+            WHERE id = ${target.target_id}
+          `
+        } else {
+          await qlog("error", `falha ao publicar em ${target.platform}: ${errMsg}`, {
+            post_id: item.post_id,
+            queue_id: item.queue_id,
+            platform: target.platform,
+            details: { error: errMsg, post_type: target.post_type },
+          })
+          await sql`
+            UPDATE post_targets
+            SET status = 'failed', error_message = ${errMsg}
+            WHERE id = ${target.target_id}
+          `
+        }
       }
     }
 
