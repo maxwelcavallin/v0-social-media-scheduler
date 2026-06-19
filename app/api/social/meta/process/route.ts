@@ -61,6 +61,23 @@ async function upsertAccount(fields: {
       updated_at          = NOW(),
       last_sync_at        = NOW()
   `
+
+  // CRÍTICO: o Facebook invalida tokens antigos do mesmo (app + usuário) quando uma
+  // nova autorização acontece. Quando a MESMA página/conta está conectada em vários
+  // workspaces, cada reconexão gera um token novo e invalida o das outras cópias —
+  // causando o erro 190 "ping-pong". Para resolver, propagamos o token recém-emitido
+  // (que é o único válido) para TODAS as linhas com o mesmo account_id+platform,
+  // em todos os workspaces, e limpamos needs_reconnect em todas elas.
+  await sql`
+    UPDATE social_accounts
+    SET access_token    = ${fields.accessToken},
+        needs_reconnect = false,
+        is_active       = true,
+        updated_at      = NOW(),
+        last_sync_at    = NOW()
+    WHERE platform = ${fields.platform}
+      AND account_id = ${fields.accountId}
+  `
 }
 
 export async function POST(request: NextRequest) {
@@ -323,11 +340,13 @@ export async function POST(request: NextRequest) {
     // Step 7: Resetar posts agendados que falharam por falta de permissão nas contas
     // recém-reconectadas. Isso permite que o cron os publique na próxima execução.
     if (reconnectedAccountIds.length > 0) {
-      // Busca as social_accounts.id (UUIDs) a partir dos account_id externos reconectados
+      // Busca as social_accounts.id (UUIDs) a partir dos account_id externos reconectados.
+      // Não filtra por workspace: como o token novo é propagado para todas as cópias
+      // da conta (em todos os workspaces), os posts falhos de qualquer workspace que
+      // usem essa conta também devem ser liberados para republicação.
       const reconnectedRows = await sql`
         SELECT id FROM social_accounts
         WHERE account_id = ANY(${reconnectedAccountIds}::text[])
-          AND workspace_id = ${workspaceId}
       `
       const reconnectedUuids = reconnectedRows.map((r: any) => r.id)
 
