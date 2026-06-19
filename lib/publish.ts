@@ -20,15 +20,33 @@ export async function publishToFacebook(item: {
     const isVideo = media_types?.[0] === "video"
 
     if (!isVideo) {
-      // Foto: endpoint simples /photo_stories com url
-      const res = await fetch(`${GRAPH_API}/${page_id}/photo_stories`, {
+      // Foto: a Graph API exige 2 etapas.
+      // Etapa 1 — faz upload da foto como NÃO publicada para obter o photo_id.
+      // Passar a url direto em /photo_stories causa "An unknown error has occurred."
+      const uploadParams = new URLSearchParams({
+        url: media_urls[0],
+        published: "false",
+        access_token,
+      })
+      const uploadRes = await fetch(`${GRAPH_API}/${page_id}/photos?${uploadParams.toString()}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: media_urls[0], access_token }),
+      })
+      const uploadData = await uploadRes.json()
+      if (uploadData.error) throw new Error(`FB photo story upload: ${uploadData.error.message}`)
+      const photoId: string = uploadData.id
+      if (!photoId) throw new Error("FB photo story: photo_id não retornado no upload")
+
+      // Etapa 2 — publica o story usando o photo_id obtido
+      const storyParams = new URLSearchParams({
+        photo_id: photoId,
+        access_token,
+      })
+      const res = await fetch(`${GRAPH_API}/${page_id}/photo_stories?${storyParams.toString()}`, {
+        method: "POST",
       })
       const data = await res.json()
-      if (data.error) throw new Error(data.error.message)
-      return data.id || data.post_id
+      if (data.error) throw new Error(`FB photo story publish: ${data.error.message}`)
+      return data.id || data.post_id || photoId
     }
 
     // Vídeo: a Graph API exige upload em 3 fases.
