@@ -142,15 +142,28 @@ async function reconcileResolvedPosts() {
 // Chamado tanto após processar os targets quanto em situações de edge-case.
 // ─────────────────────────────────────────────────────────────────────────────
 async function finalizeQueueItem(queueId: string, postId: string) {
+  // Classifica os targets levando em conta o ESTADO DA CONTA. Um target só é
+  // "publicável" se a conta está ativa e não precisa reconexão. Targets pendentes
+  // ou falhos em contas que precisam reconexão são "bloqueados" — não adianta
+  // retentá-los e, principalmente, eles NÃO devem manter a fila em 'pending'
+  // eternamente (esse era o bug do post que ficava "agendado" para sempre).
   const rows = await sql`
     SELECT
       COUNT(pt.id)::int                                        AS total,
       COUNT(pt.id) FILTER (WHERE pt.status = 'published')::int AS published,
-      COUNT(pt.id) FILTER (WHERE pt.status = 'failed')::int    AS failed,
-      COUNT(pt.id) FILTER (WHERE pt.status = 'pending')::int   AS pending,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'pending'
+        AND COALESCE(sa.needs_reconnect, false) = false
+        AND COALESCE(sa.is_active, true) = true)::int          AS pending_publishable,
+      COUNT(pt.id) FILTER (WHERE pt.status = 'failed'
+        AND COALESCE(sa.needs_reconnect, false) = false
+        AND COALESCE(sa.is_active, true) = true)::int          AS failed_retryable,
+      COUNT(pt.id) FILTER (WHERE pt.status IN ('pending','failed')
+        AND (COALESCE(sa.needs_reconnect, false) = true
+          OR COALESCE(sa.is_active, true) = false))::int       AS blocked,
       pq.attempts,
       pq.max_attempts
     FROM post_targets pt
+    JOIN social_accounts sa ON sa.id = pt.social_account_id
     CROSS JOIN (SELECT attempts, max_attempts FROM post_queue WHERE id = ${queueId}) pq
     WHERE pt.post_id = ${postId}
     GROUP BY pq.attempts, pq.max_attempts
@@ -158,61 +171,42 @@ async function finalizeQueueItem(queueId: string, postId: string) {
   const stats = rows[0]
   const total: number = stats?.total ?? 0
   const published: number = stats?.published ?? 0
-  const failed: number = stats?.failed ?? 0
-  const pending: number = stats?.pending ?? 0
+  const pendingPublishable: number = stats?.pending_publishable ?? 0
+  const failedRetryable: number = stats?.failed_retryable ?? 0
+  const blocked: number = stats?.blocked ?? 0
   const attempts: number = stats?.attempts ?? 0
   const maxAttempts: number = stats?.max_attempts ?? 3
   const hasRetries = attempts < maxAttempts
 
-  // Ainda há targets pendentes — reagenda para próxima rodada
-  if (pending > 0) {
-    await sql`
-      UPDATE post_queue SET status = 'pending', updated_at = NOW()
-      WHERE id = ${queueId}
-    `
-    await sql`
-      UPDATE posts SET status = 'scheduled', updated_at = NOW()
-      WHERE id = ${postId}
-    `
+  // 1. Ainda há targets publicáveis aguardando — segue tentando na próxima rodada.
+  if (pendingPublishable > 0) {
+    await sql`UPDATE post_queue SET status = 'pending', updated_at = NOW() WHERE id = ${queueId}`
+    await sql`UPDATE posts SET status = 'scheduled', updated_at = NOW() WHERE id = ${postId}`
     return
   }
 
-  if (published === total && total > 0) {
-    // Todos publicados com sucesso
+  // 2. Há falhas em contas válidas (erros transitórios) e ainda restam tentativas —
+  //    reseta SOMENTE essas falhas retentáveis e reagenda. Targets bloqueados por
+  //    reconexão NÃO são tocados (continuam 'failed' aguardando o Step 7).
+  if (hasRetries && failedRetryable > 0) {
     await sql`
-      UPDATE post_queue SET status = 'done', updated_at = NOW()
-      WHERE id = ${queueId}
+      UPDATE post_targets pt
+      SET status = 'pending', error_message = NULL
+      FROM social_accounts sa
+      WHERE pt.social_account_id = sa.id
+        AND pt.post_id = ${postId}
+        AND pt.status = 'failed'
+        AND COALESCE(sa.needs_reconnect, false) = false
+        AND COALESCE(sa.is_active, true) = true
     `
-    await sql`
-      UPDATE posts
-      SET status = 'published',
-          published_at = COALESCE(published_at, NOW()),
-          error_message = NULL,
-          updated_at = NOW()
-      WHERE id = ${postId}
-    `
+    await sql`UPDATE post_queue SET status = 'pending', updated_at = NOW() WHERE id = ${queueId}`
+    await sql`UPDATE posts SET status = 'scheduled', updated_at = NOW() WHERE id = ${postId}`
     return
   }
 
-  // Há targets com falha. Se ainda há tentativas disponíveis, reseta os targets
-  // falhos para 'pending' e reagenda — a próxima execução do cron os retentará.
-  if (hasRetries && failed > 0) {
-    await sql`
-      UPDATE post_targets SET status = 'pending', error_message = NULL
-      WHERE post_id = ${postId} AND status = 'failed'
-    `
-    await sql`
-      UPDATE post_queue SET status = 'pending', updated_at = NOW()
-      WHERE id = ${queueId}
-    `
-    await sql`
-      UPDATE posts SET status = 'scheduled', updated_at = NOW()
-      WHERE id = ${postId}
-    `
-    return
-  }
-
-  // Sem tentativas restantes — coleta os erros reais e marca como falha definitiva
+  // 3. ESTADO TERMINAL: não há mais nada publicável para tentar nesta rodada.
+  //    Os únicos targets não publicados são falhas definitivas ou bloqueios por
+  //    reconexão. Finalizamos a fila (nunca deixar em 'pending' eternamente).
   const failedRows = await sql`
     SELECT sa.platform, pt.error_message
     FROM post_targets pt
@@ -222,19 +216,44 @@ async function finalizeQueueItem(queueId: string, postId: string) {
   const errDetails = failedRows
     .map((t: any) => `${t.platform}: ${t.error_message || "erro desconhecido"}`)
     .join("; ")
+
+  if (published === total && total > 0) {
+    // Tudo publicado com sucesso.
+    await sql`UPDATE post_queue SET status = 'done', updated_at = NOW() WHERE id = ${queueId}`
+    await sql`
+      UPDATE posts
+      SET status = 'published', published_at = COALESCE(published_at, NOW()),
+          error_message = NULL, updated_at = NOW()
+      WHERE id = ${postId}
+    `
+    return
+  }
+
+  if (published > 0) {
+    // Publicação parcial: parte publicou, parte falhou/bloqueada. Encerra a fila
+    // (status 'done' para não retentar em loop) mas registra o aviso no post.
+    // Os targets bloqueados permanecem 'failed' e serão revividos no reconnect.
+    const warn = blocked > 0 && !errDetails
+      ? `Publicação parcial — ${published}/${total} publicado(s). Aguardando reconexão de conta(s).`
+      : `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${errDetails}`
+    await sql`UPDATE post_queue SET status = 'done', last_error = ${warn}, updated_at = NOW() WHERE id = ${queueId}`
+    await sql`
+      UPDATE posts
+      SET status = 'published', published_at = COALESCE(published_at, NOW()),
+          error_message = ${warn}, updated_at = NOW()
+      WHERE id = ${postId}
+    `
+    return
+  }
+
+  // 4. Nada publicou. Se é só bloqueio por reconexão, a mensagem orienta o usuário.
   const errorMessage =
-    failed < total && published > 0
-      ? `Publicação parcial — ${published}/${total} publicado(s). Falhas: ${errDetails}`
+    blocked > 0 && !errDetails
+      ? "Aguardando reconexão da conta para publicar."
       : errDetails || "Falha ao publicar (motivo desconhecido)"
 
-  await sql`
-    UPDATE post_queue SET status = 'failed', last_error = ${errorMessage}, updated_at = NOW()
-    WHERE id = ${queueId}
-  `
-  await sql`
-    UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW()
-    WHERE id = ${postId}
-  `
+  await sql`UPDATE post_queue SET status = 'failed', last_error = ${errorMessage}, updated_at = NOW() WHERE id = ${queueId}`
+  await sql`UPDATE posts SET status = 'failed', error_message = ${errorMessage}, updated_at = NOW() WHERE id = ${postId}`
 }
 
 async function processQueue() {
@@ -385,10 +404,14 @@ async function processQueue() {
         const errMsg = err?.message || String(err)
 
         if (isTokenError(errMsg)) {
-          // Token inválido/degradado: marca a conta para reconexão e mantém o
-          // target PENDENTE (não 'failed'). Assim o post não é morto — ele fica
-          // aguardando o usuário reconectar a conta, e o cron deixa de tentar
-          // publicar com o token quebrado (consumindo tentativas em vão).
+          // Token inválido/degradado: marca a conta para reconexão e o target como
+          // 'failed' com mensagem reconhecível. O flag needs_reconnect na conta é o
+          // que impede novas tentativas com token quebrado (a query do cron exclui
+          // contas a reconectar). Marcar 'failed' (em vez de 'pending') mantém o
+          // finalizeQueueItem e a recuperação pós-reconexão (Step 7) consistentes —
+          // ambos trabalham com targets 'failed'. Assim o post NÃO fica preso em
+          // 'pending' eternamente: ele é finalizado e revivido quando a conta
+          // reconectar.
           await qlog("warn", `token inválido em ${target.platform} — marcando conta para reconexão`, {
             post_id: item.post_id,
             queue_id: item.queue_id,
@@ -402,7 +425,7 @@ async function processQueue() {
           `
           await sql`
             UPDATE post_targets
-            SET status = 'pending', error_message = ${"Conta precisa reconexão: " + errMsg}
+            SET status = 'failed', error_message = ${"Conta precisa reconexão: " + errMsg}
             WHERE id = ${target.target_id}
           `
         } else {

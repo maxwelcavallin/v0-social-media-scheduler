@@ -351,8 +351,9 @@ export async function POST(request: NextRequest) {
       const reconnectedUuids = reconnectedRows.map((r: any) => r.id)
 
       if (reconnectedUuids.length > 0) {
-        // Reseta para 'pending' apenas os targets que falharam por erro de permissão (190)
-        await sql`
+        // 1. Revive os targets que falharam por erro de permissão/reconexão (190)
+        //    nas contas recém-reconectadas, voltando-os para 'pending'.
+        const revived = await sql`
           UPDATE post_targets
           SET status = 'pending', error_message = NULL
           WHERE social_account_id = ANY(${reconnectedUuids}::uuid[])
@@ -361,36 +362,33 @@ export async function POST(request: NextRequest) {
               error_message ILIKE '%impersonating a user%'
               OR error_message ILIKE '%pages_read_engagement%'
               OR error_message ILIKE '%[190]%'
+              OR error_message ILIKE '%precisa reconexão%'
             )
+          RETURNING post_id
         `
+        const revivedPostIds = Array.from(new Set(revived.map((r: any) => r.post_id)))
 
-        // Reseta a fila dos posts que agora têm todos os targets pendentes novamente
-        await sql`
-          UPDATE post_queue pq
-          SET status = 'pending', attempts = 0, last_error = NULL, updated_at = NOW()
-          WHERE pq.status = 'failed'
-            AND EXISTS (
-              SELECT 1 FROM post_targets pt
-              WHERE pt.post_id = pq.post_id AND pt.status = 'pending'
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM post_targets pt
-              WHERE pt.post_id = pq.post_id AND pt.status = 'failed'
-            )
-        `
+        if (revivedPostIds.length > 0) {
+          // 2. Reabre a fila desses posts INDEPENDENTE do status atual (pending,
+          //    failed ou done — o caso de publicação parcial fica 'done'). Como os
+          //    targets já publicados permanecem 'published', a republicação só
+          //    atinge os targets revividos — sem duplicar o que já foi postado.
+          await sql`
+            UPDATE post_queue
+            SET status = 'pending', attempts = 0, last_error = NULL,
+                updated_at = NOW(), scheduled_at = NOW()
+            WHERE post_id = ANY(${revivedPostIds}::uuid[])
+          `
 
-        // Reseta o status do post também
-        await sql`
-          UPDATE posts p
-          SET status = 'scheduled', error_message = NULL, updated_at = NOW()
-          WHERE p.status = 'failed'
-            AND EXISTS (
-              SELECT 1 FROM post_queue pq2
-              WHERE pq2.post_id = p.id AND pq2.status = 'pending'
-            )
-        `
+          // 3. Reabre o post para o cron processar novamente.
+          await sql`
+            UPDATE posts
+            SET status = 'scheduled', error_message = NULL, updated_at = NOW()
+            WHERE id = ANY(${revivedPostIds}::uuid[])
+          `
+        }
 
-        console.log("[v0] meta/process: resetados targets e fila para accounts reconectadas:", reconnectedUuids.length)
+        console.log("[v0] meta/process: posts revividos após reconexão:", revivedPostIds.length)
       }
     }
 
