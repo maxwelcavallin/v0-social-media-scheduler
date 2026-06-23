@@ -323,6 +323,65 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Step 6b: Propagar pageTokens frescos para todas as cópias das páginas deste
+    // usuário que já existem no banco em outros workspaces.
+    // Motivação: o Meta invalida o userToken anterior (e todos os pageTokens dele)
+    // sempre que uma nova autorização OAuth é concluída. Páginas do mesmo usuário
+    // conectadas em outros workspaces ficam com token morto. Aqui buscamos o pageToken
+    // fresco de cada página via /me/accounts (usando o userToken recém-emitido) e
+    // atualizamos TODAS as linhas no banco com esse token — independente de workspace.
+    try {
+      const freshPagesRes = await fetch(
+        `${GRAPH_API}/me/accounts?access_token=${userToken}&limit=100&fields=id,access_token`
+      )
+      const freshPagesData = await freshPagesRes.json()
+
+      if (freshPagesData.data && freshPagesData.data.length > 0) {
+        for (const freshPage of freshPagesData.data) {
+          if (!freshPage.access_token) continue
+
+          // Validar o token fresco antes de propagar
+          const freshValidation = await isValidPageToken(freshPage.id, freshPage.access_token)
+          if (!freshValidation.valid) continue
+
+          // Atualizar TODAS as linhas Facebook no banco com esse account_id,
+          // exceto o workspace atual que já foi atualizado pelo ON CONFLICT do Step 6.
+          await sql`
+            UPDATE social_accounts
+            SET access_token    = ${freshPage.access_token},
+                needs_reconnect = false,
+                is_active       = true,
+                updated_at      = NOW(),
+                last_sync_at    = NOW()
+            WHERE platform   = 'facebook'
+              AND account_id = ${freshPage.id}
+              AND workspace_id != ${workspaceId}
+          `
+
+          // Atualizar também as contas Instagram vinculadas a esta página FB
+          // (o pageToken do Facebook é o mesmo token usado para publicar no IG via page_id)
+          await sql`
+            UPDATE social_accounts
+            SET access_token    = ${freshPage.access_token},
+                needs_reconnect = false,
+                is_active       = true,
+                updated_at      = NOW(),
+                last_sync_at    = NOW()
+            WHERE platform = 'instagram'
+              AND page_id  = ${freshPage.id}
+              AND workspace_id != ${workspaceId}
+          `
+
+          console.log(
+            `[v0] meta/process step6b: token propagado para página ${freshPage.id} em outros workspaces`
+          )
+        }
+      }
+    } catch (e) {
+      // Não interromper o fluxo principal se a propagação falhar
+      console.warn("[v0] meta/process step6b: erro ao propagar tokens:", e instanceof Error ? e.message : e)
+    }
+
     // Step 7: Resetar posts agendados que falharam por falta de permissão nas contas
     // recém-reconectadas. Isso permite que o cron os publique na próxima execução.
     if (reconnectedAccountIds.length > 0) {
