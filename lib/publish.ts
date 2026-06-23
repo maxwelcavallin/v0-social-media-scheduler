@@ -1,6 +1,40 @@
 export const GRAPH_API = "https://graph.facebook.com/v22.0"
 export const GRAPH_IG = "https://graph.instagram.com"
 
+// Aguarda o Meta processar o vídeo após o upload (Fase 2 → Fase 3).
+// Verifica o status via /{video_id}?fields=status até o vídeo estar pronto
+// ou o timeout ser atingido. Equivalente ao pollContainer do Instagram.
+async function pollFacebookVideo(
+  videoId: string,
+  accessToken: string,
+  maxWaitMs = 120_000
+): Promise<void> {
+  const deadline = Date.now() + maxWaitMs
+
+  // Aguarda 3s fixo antes da primeira verificação
+  await new Promise((r) => setTimeout(r, 3000))
+
+  let interval = 3000
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      `${GRAPH_API}/${videoId}?fields=status&access_token=${encodeURIComponent(accessToken)}`
+    )
+    const data = await res.json()
+
+    const videoStatus = data?.status?.video_status
+    const progress = data?.status?.processing_progress
+
+    if (videoStatus === "ready" || progress === 100) return
+    if (videoStatus === "error") {
+      throw new Error(`Facebook rejeitou o vídeo: ${data?.status?.error?.message || "erro desconhecido"}`)
+    }
+
+    await new Promise((r) => setTimeout(r, interval))
+    interval = Math.min(interval + 2000, 8000)
+  }
+  throw new Error("Tempo esgotado aguardando processamento do vídeo no Facebook")
+}
+
 export async function publishToFacebook(item: {
   access_token: string
   page_id: string
@@ -74,8 +108,15 @@ export async function publishToFacebook(item: {
         "file_url": media_urls[0],
       },
     })
-    const uploadData = await uploadRes.json()
-    if (uploadData.error) throw new Error(`FB story fase upload: ${uploadData.error.message}`)
+    // Proteção: alguns endpoints do Meta retornam body vazio em certas condições
+    const uploadText = await uploadRes.text()
+    if (uploadText) {
+      const uploadData = JSON.parse(uploadText)
+      if (uploadData.error) throw new Error(`FB story fase upload: ${uploadData.error.message}`)
+    }
+
+    // Aguarda o Meta processar o vídeo antes de finalizar
+    await pollFacebookVideo(videoId, access_token, 120_000)
 
     // Fase 3 — finaliza e publica o story (video_id como query param)
     const finishRes = await fetch(
@@ -91,6 +132,10 @@ export async function publishToFacebook(item: {
   // Assim como o story de vídeo, o reel exige upload em 3 fases.
   if (isReel) {
     if (!media_urls || media_urls.length === 0) throw new Error("Reels no Facebook exigem um vídeo.")
+    // Guard: reel exige vídeo — imagem causa erro obscuro na Fase 2
+    if (media_types?.[0] !== "video") {
+      throw new Error("Reels no Facebook exigem um arquivo de vídeo. Imagens não são suportadas neste formato.")
+    }
 
     // Fase 1 — inicia o upload e obtém video_id + upload_url
     const startRes = await fetch(
@@ -112,20 +157,33 @@ export async function publishToFacebook(item: {
         "file_url": media_urls[0],
       },
     })
-    const uploadData = await uploadRes.json()
-    if (uploadData.error) throw new Error(`FB reel fase upload: ${uploadData.error.message}`)
+    // Proteção: alguns endpoints do Meta retornam body vazio em certas condições
+    const uploadText = await uploadRes.text()
+    if (uploadText) {
+      const uploadData = JSON.parse(uploadText)
+      if (uploadData.error) throw new Error(`FB reel fase upload: ${uploadData.error.message}`)
+    }
 
-    // Fase 3 — finaliza e publica o reel (parâmetros como query params)
-    const params = new URLSearchParams({
+    // Aguarda o Meta processar o vídeo antes de finalizar
+    await pollFacebookVideo(videoId, access_token, 120_000)
+
+    // Fase 3 — finaliza e publica o reel.
+    // IMPORTANTE: upload_phase, video_id e video_state DEVEM ir como query params.
+    // description vai no body como JSON — URLSearchParams corrompe acentos e emojis.
+    const reelQueryParams = new URLSearchParams({
       upload_phase: "finish",
       video_id: videoId,
       video_state: "PUBLISHED",
-      description: content || "",
       access_token,
     })
-    const finishRes = await fetch(`${GRAPH_API}/${page_id}/video_reels?${params.toString()}`, {
-      method: "POST",
-    })
+    const finishRes = await fetch(
+      `${GRAPH_API}/${page_id}/video_reels?${reelQueryParams.toString()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: content || "" }),
+      }
+    )
     const finishData = await finishRes.json()
     if (finishData.error) throw new Error(`FB reel fase finish: ${finishData.error.message}`)
     return finishData.id || finishData.post_id || videoId
