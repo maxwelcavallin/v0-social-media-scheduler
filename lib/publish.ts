@@ -1,6 +1,35 @@
 export const GRAPH_API = "https://graph.facebook.com/v22.0"
 export const GRAPH_IG = "https://graph.instagram.com"
 
+// Re-emite um Page Access Token fresco a partir de um User Access Token de longa
+// duração. Um único user token válido do dono da página consegue gerar tokens
+// novos para TODAS as páginas que ele administra — é a base da auto-cura: quando o
+// page token salvo morre (erro 190), geramos um novo na hora sem exigir reconexão.
+// Retorna o token fresco, ou null se o próprio user token estiver inválido.
+export async function refreshFacebookPageToken(
+  pageId: string,
+  userToken: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${GRAPH_API}/${pageId}?fields=access_token&access_token=${encodeURIComponent(userToken)}`
+    )
+    const data = await res.json()
+    if (data.error || !data.access_token) return null
+
+    // Confirma que o token fresco realmente funciona como page token
+    const check = await fetch(
+      `${GRAPH_API}/me?fields=id&access_token=${encodeURIComponent(data.access_token)}`
+    )
+    const checkData = await check.json()
+    if (checkData.error || checkData.id !== pageId) return null
+
+    return data.access_token as string
+  } catch {
+    return null
+  }
+}
+
 // Aguarda o Meta processar o vídeo após o upload (Fase 2 → Fase 3).
 // Verifica o status via /{video_id}?fields=status até o vídeo estar pronto
 // ou o timeout ser atingido. Equivalente ao pollContainer do Instagram.
