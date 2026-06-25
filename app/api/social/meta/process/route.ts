@@ -38,16 +38,20 @@ async function upsertAccount(fields: {
   pageId: string | null
   accessToken: string
   profilePictureUrl: string | null
+  userAccessToken: string | null
+  fbUserId: string | null
 }) {
   await sql`
     INSERT INTO social_accounts (
       workspace_id, platform, account_name, account_username, account_id, page_id,
-      access_token, profile_picture_url, is_active, created_at, updated_at, last_sync_at
+      access_token, profile_picture_url, user_access_token, fb_user_id,
+      is_active, created_at, updated_at, last_sync_at
     )
     VALUES (
       ${fields.workspaceId}, ${fields.platform}, ${fields.accountName},
       ${fields.accountUsername}, ${fields.accountId}, ${fields.pageId},
       ${fields.accessToken}, ${fields.profilePictureUrl},
+      ${fields.userAccessToken}, ${fields.fbUserId},
       true, NOW(), NOW(), NOW()
     )
     ON CONFLICT (workspace_id, platform, account_id) DO UPDATE SET
@@ -56,6 +60,8 @@ async function upsertAccount(fields: {
       account_username    = EXCLUDED.account_username,
       profile_picture_url = EXCLUDED.profile_picture_url,
       page_id             = EXCLUDED.page_id,
+      user_access_token   = EXCLUDED.user_access_token,
+      fb_user_id          = EXCLUDED.fb_user_id,
       is_active           = true,
       needs_reconnect     = false,
       updated_at          = NOW(),
@@ -64,6 +70,7 @@ async function upsertAccount(fields: {
 
   // O ON CONFLICT acima já garante que a reconexão dentro do workspace correto
   // atualiza o token certo sem afetar outras contas ou outros workspaces.
+  // O user_access_token salvo permite a auto-cura na publicação (lib/publish).
 }
 
 export async function POST(request: NextRequest) {
@@ -293,6 +300,8 @@ export async function POST(request: NextRequest) {
         pageId: page.id,
         accessToken: pageToken,
         profilePictureUrl: page.picture?.url ?? null,
+        userAccessToken: userToken,
+        fbUserId: userId ?? null,
       })
       reconnectedAccountIds.push(page.id)
       saved.push({ platform: "facebook", name: page.name })
@@ -316,6 +325,8 @@ export async function POST(request: NextRequest) {
             pageId: page.id,
             accessToken: pageToken,
             profilePictureUrl: igData.profile_picture_url ?? null,
+            userAccessToken: userToken,
+            fbUserId: userId ?? null,
           })
           reconnectedAccountIds.push(igData.id)
           saved.push({ platform: "instagram", name: igData.username || igData.name })
@@ -348,11 +359,13 @@ export async function POST(request: NextRequest) {
           // exceto o workspace atual que já foi atualizado pelo ON CONFLICT do Step 6.
           await sql`
             UPDATE social_accounts
-            SET access_token    = ${freshPage.access_token},
-                needs_reconnect = false,
-                is_active       = true,
-                updated_at      = NOW(),
-                last_sync_at    = NOW()
+            SET access_token      = ${freshPage.access_token},
+                user_access_token = ${userToken},
+                fb_user_id        = ${userId ?? null},
+                needs_reconnect   = false,
+                is_active         = true,
+                updated_at        = NOW(),
+                last_sync_at      = NOW()
             WHERE platform   = 'facebook'
               AND account_id = ${freshPage.id}
               AND workspace_id != ${workspaceId}
@@ -362,11 +375,13 @@ export async function POST(request: NextRequest) {
           // (o pageToken do Facebook é o mesmo token usado para publicar no IG via page_id)
           await sql`
             UPDATE social_accounts
-            SET access_token    = ${freshPage.access_token},
-                needs_reconnect = false,
-                is_active       = true,
-                updated_at      = NOW(),
-                last_sync_at    = NOW()
+            SET access_token      = ${freshPage.access_token},
+                user_access_token = ${userToken},
+                fb_user_id        = ${userId ?? null},
+                needs_reconnect   = false,
+                is_active         = true,
+                updated_at        = NOW(),
+                last_sync_at      = NOW()
             WHERE platform = 'instagram'
               AND page_id  = ${freshPage.id}
               AND workspace_id != ${workspaceId}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import sql from "@/lib/db"
-import { publishToFacebook, publishToInstagram, GRAPH_API, GRAPH_IG } from "@/lib/publish"
+import { publishToFacebook, publishToInstagram, refreshFacebookPageToken, GRAPH_API, GRAPH_IG } from "@/lib/publish"
 
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300
@@ -326,7 +326,9 @@ async function processQueue() {
         sa.platform,
         sa.account_id,
         sa.page_id,
-        sa.access_token
+        sa.access_token,
+        sa.user_access_token,
+        sa.fb_user_id
       FROM post_targets pt
       JOIN social_accounts sa ON sa.id = pt.social_account_id
       WHERE pt.post_id = ${item.post_id}
@@ -365,12 +367,12 @@ async function processQueue() {
         queue_id: item.queue_id,
         platform: target.platform,
       })
-      try {
-        let platformPostId: string | null = null
-
+      // Closure de publicação reutilizável — recebe o token a usar para que a
+      // auto-cura possa tentar novamente com um token recém-emitido.
+      const publishWith = async (token: string): Promise<string | null> => {
         if (target.platform === "facebook") {
-          platformPostId = await publishToFacebook({
-            access_token: target.access_token,
+          return await publishToFacebook({
+            access_token: token,
             page_id: target.page_id,
             content: item.content,
             media_urls: item.media_urls,
@@ -378,8 +380,8 @@ async function processQueue() {
             post_type: target.post_type,
           })
         } else if (target.platform === "instagram") {
-          platformPostId = await publishToInstagram({
-            access_token: target.access_token,
+          return await publishToInstagram({
+            access_token: token,
             account_id: target.account_id,
             page_id: target.page_id,
             content: item.content,
@@ -389,6 +391,11 @@ async function processQueue() {
             cover_url: item.cover_url ?? null,
           })
         }
+        return null
+      }
+
+      try {
+        const platformPostId: string | null = await publishWith(target.access_token)
 
         await qlog("info", `publicado com sucesso em ${target.platform}. platform_post_id: ${platformPostId}`, {
           post_id: item.post_id,
@@ -404,6 +411,59 @@ async function processQueue() {
         const errMsg = err?.message || String(err)
 
         if (isTokenError(errMsg)) {
+          // AUTO-CURA: antes de marcar a conta para reconexão, tentamos re-emitir
+          // um Page Access Token fresco a partir do user_access_token salvo. Como
+          // todas as páginas do mesmo usuário FB derivam do mesmo user token, um
+          // user token válido consegue gerar um page token novo na hora — sem exigir
+          // reconexão manual. Só funciona via page_id (IG direto não tem page token).
+          if (target.user_access_token && target.page_id) {
+            await qlog("info", `tentando auto-cura do token em ${target.platform}`, {
+              post_id: item.post_id,
+              queue_id: item.queue_id,
+              platform: target.platform,
+              details: { social_account_id: target.social_account_id },
+            })
+            const freshToken = await refreshFacebookPageToken(target.page_id, target.user_access_token)
+            if (freshToken) {
+              // Persiste o token fresco em TODAS as cópias dessa página/conta
+              // (Facebook por account_id, Instagram por page_id), em todos os workspaces.
+              await sql`
+                UPDATE social_accounts
+                SET access_token = ${freshToken}, needs_reconnect = false,
+                    is_active = true, updated_at = NOW(), last_sync_at = NOW()
+                WHERE (platform = 'facebook' AND account_id = ${target.page_id})
+                   OR (platform = 'instagram' AND page_id = ${target.page_id})
+              `
+              try {
+                const retryPostId = await publishWith(freshToken)
+                await qlog("info", `auto-cura bem-sucedida em ${target.platform}. platform_post_id: ${retryPostId}`, {
+                  post_id: item.post_id,
+                  queue_id: item.queue_id,
+                  platform: target.platform,
+                })
+                await sql`
+                  UPDATE post_targets
+                  SET status = 'published', platform_post_id = ${retryPostId}
+                  WHERE id = ${target.target_id}
+                `
+                continue // target publicado — pula a marcação de reconexão
+              } catch (retryErr: any) {
+                // A republicação ainda falhou — cai para o fluxo de reconexão abaixo.
+                await qlog("warn", `auto-cura falhou na republicação em ${target.platform}: ${retryErr?.message || retryErr}`, {
+                  post_id: item.post_id,
+                  queue_id: item.queue_id,
+                  platform: target.platform,
+                })
+              }
+            } else {
+              await qlog("warn", `auto-cura não obteve token fresco em ${target.platform} (user token provavelmente expirado)`, {
+                post_id: item.post_id,
+                queue_id: item.queue_id,
+                platform: target.platform,
+              })
+            }
+          }
+
           // Token inválido/degradado: marca a conta para reconexão e o target como
           // 'failed' com mensagem reconhecível. O flag needs_reconnect na conta é o
           // que impede novas tentativas com token quebrado (a query do cron exclui

@@ -1,13 +1,42 @@
 export const GRAPH_API = "https://graph.facebook.com/v22.0"
 export const GRAPH_IG = "https://graph.instagram.com"
 
+// Re-emite um Page Access Token fresco a partir de um User Access Token de longa
+// duração. Um único user token válido do dono da página consegue gerar tokens
+// novos para TODAS as páginas que ele administra — é a base da auto-cura: quando o
+// page token salvo morre (erro 190), geramos um novo na hora sem exigir reconexão.
+// Retorna o token fresco, ou null se o próprio user token estiver inválido.
+export async function refreshFacebookPageToken(
+  pageId: string,
+  userToken: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${GRAPH_API}/${pageId}?fields=access_token&access_token=${encodeURIComponent(userToken)}`
+    )
+    const data = await res.json()
+    if (data.error || !data.access_token) return null
+
+    // Confirma que o token fresco realmente funciona como page token
+    const check = await fetch(
+      `${GRAPH_API}/me?fields=id&access_token=${encodeURIComponent(data.access_token)}`
+    )
+    const checkData = await check.json()
+    if (checkData.error || checkData.id !== pageId) return null
+
+    return data.access_token as string
+  } catch {
+    return null
+  }
+}
+
 // Aguarda o Meta processar o vídeo após o upload (Fase 2 → Fase 3).
 // Verifica o status via /{video_id}?fields=status até o vídeo estar pronto
 // ou o timeout ser atingido. Equivalente ao pollContainer do Instagram.
 async function pollFacebookVideo(
   videoId: string,
   accessToken: string,
-  maxWaitMs = 120_000
+  maxWaitMs = 180_000
 ): Promise<void> {
   const deadline = Date.now() + maxWaitMs
 
@@ -15,18 +44,38 @@ async function pollFacebookVideo(
   await new Promise((r) => setTimeout(r, 3000))
 
   let interval = 3000
+  let lastStatusSnapshot = ""
   while (Date.now() < deadline) {
     const res = await fetch(
       `${GRAPH_API}/${videoId}?fields=status&access_token=${encodeURIComponent(accessToken)}`
     )
     const data = await res.json()
+    const status = data?.status ?? {}
 
-    const videoStatus = data?.status?.video_status
-    const progress = data?.status?.processing_progress
+    const videoStatus: string | undefined = status.video_status
+    const progress: number | undefined = status.processing_progress
+    const uploadingPhase = status.uploading_phase?.status
+    const processingPhase = status.processing_phase?.status
+    const publishingPhase = status.publishing_phase?.status
 
-    if (videoStatus === "ready" || progress === 100) return
-    if (videoStatus === "error") {
-      throw new Error(`Facebook rejeitou o vídeo: ${data?.status?.error?.message || "erro desconhecido"}`)
+    // Log diagnóstico (visível nos logs da Vercel) para entender onde o vídeo trava
+    const snapshot = `${videoStatus}|up:${uploadingPhase}|proc:${processingPhase}|pub:${publishingPhase}|${progress}`
+    if (snapshot !== lastStatusSnapshot) {
+      console.log(`[v0][publish] FB video ${videoId} status: ${snapshot}`)
+      lastStatusSnapshot = snapshot
+    }
+
+    // Pronto: vídeo processado (qualquer um dos sinais de conclusão)
+    if (videoStatus === "ready" || progress === 100 || processingPhase === "complete") return
+
+    // Falha rápida: o Meta já reportou erro em qualquer fase — não espera o timeout
+    if (videoStatus === "error" || uploadingPhase === "error" || processingPhase === "error") {
+      const phaseErr =
+        status.uploading_phase?.error?.message ||
+        status.processing_phase?.error?.message ||
+        status.error?.message ||
+        "erro desconhecido"
+      throw new Error(`Facebook rejeitou o vídeo: ${phaseErr}`)
     }
 
     await new Promise((r) => setTimeout(r, interval))
@@ -116,7 +165,7 @@ export async function publishToFacebook(item: {
     }
 
     // Aguarda o Meta processar o vídeo antes de finalizar
-    await pollFacebookVideo(videoId, access_token, 120_000)
+    await pollFacebookVideo(videoId, access_token, 180_000)
 
     // Fase 3 — finaliza e publica o story (video_id como query param)
     const finishRes = await fetch(
@@ -165,7 +214,7 @@ export async function publishToFacebook(item: {
     }
 
     // Aguarda o Meta processar o vídeo antes de finalizar
-    await pollFacebookVideo(videoId, access_token, 120_000)
+    await pollFacebookVideo(videoId, access_token, 180_000)
 
     // Fase 3 — finaliza e publica o reel.
     // IMPORTANTE: upload_phase, video_id e video_state DEVEM ir como query params.
@@ -283,10 +332,16 @@ export async function publishToInstagram(item: {
     await new Promise((r) => setTimeout(r, 4000))
 
     let interval = 3000 // começa com 3s, aumenta progressivamente
+    let lastCode = ""
     while (Date.now() < deadline) {
       const statusRes = await fetch(pollUrl)
       const statusData = await statusRes.json()
       const code: string = statusData.status_code ?? ""
+      // Log diagnóstico (visível nos logs da Vercel) para entender onde a mídia trava
+      if (code !== lastCode) {
+        console.log(`[v0][publish] IG container ${containerId} status_code: ${code || "(vazio)"} ${statusData.status || ""}`)
+        lastCode = code
+      }
       if (code === "FINISHED") return
       if (code === "ERROR") {
         throw new Error(`Instagram rejeitou a mídia: ${statusData.status || "erro desconhecido"}`)
@@ -326,8 +381,8 @@ export async function publishToInstagram(item: {
       throw new Error(`Erro ao criar container: ${containerData.error.message} [${containerData.error.code}]`)
     }
 
-    // Imagens: até 60s | Vídeos/Reels: até 120s
-    await pollContainer(containerData.id, isVideo ? 120_000 : 60_000)
+    // Imagens: até 60s | Vídeos/Reels: até 180s
+    await pollContainer(containerData.id, isVideo ? 180_000 : 60_000)
 
     const publishRes = await fetch(publishEndpoint, {
       method: "POST",
