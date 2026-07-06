@@ -70,10 +70,12 @@ export const config = {
   matcher: [
     /*
      * Intercepta todas as rotas exceto:
-     * - _next/static (arquivos estáticos)
-     * - _next/image (otimização de imagens)
+     * - _next/static (arquivos estáticos do build)
+     * - _next/image  (otimização de imagens)
      * - favicon.ico
+     * - arquivos estáticos da pasta public (imagens, fontes, etc.)
+     *   ex: /logo-dog.png, /icons/*, /images/*
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|otf)).*)",
   ],
 }
