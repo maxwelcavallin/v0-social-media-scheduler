@@ -3,6 +3,7 @@ import sql from "@/lib/db"
 import { redirect, notFound } from "next/navigation"
 import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-button"
 import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
+import { PageSelectorDialog } from "@/components/accounts/page-selector-dialog"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
 import { InstagramTestButton } from "@/components/accounts/instagram-test-button"
 import { Badge } from "@/components/ui/badge"
@@ -74,6 +75,7 @@ export default async function AccountsPage({ params }: Props) {
           <p className="text-sm text-muted-foreground mt-1">{ws.name}</p>
         </div>
         <div className="flex items-center gap-2">
+          <PageSelectorDialog workspaceId={workspaceId} />
           <ConnectMetaButton workspaceId={workspaceId} />
           <ConnectInstagramButton workspaceId={workspaceId} />
         </div>
@@ -205,7 +207,8 @@ function InstagramAccountCard({ account, isAdmin, workspaceId }: { account: any;
           <div className="mt-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-800 px-3 py-2">
             <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
             <p className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
-              Reconexão necessária. Esta conta falhou ao publicar por falta de permissões. Clique em <strong>Reconectar</strong> para corrigir.
+              O Facebook revogou o acesso a esta conta (provavelmente ela foi desmarcada ao conectar outra).
+              Clique em <strong>Reconectar</strong> e, na tela do Facebook, mantenha <strong>TODAS as páginas marcadas</strong> para não perder o acesso às demais.
             </p>
           </div>
         )}
@@ -244,7 +247,8 @@ function FacebookAccountCard({ account, workspaceId }: { account: any; workspace
             <div className="mt-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-800 px-3 py-2">
               <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
               <p className="text-xs text-red-700 dark:text-red-400 leading-relaxed">
-                Reconexão necessária. Esta conta falhou ao publicar por falta de permissões. Clique em <strong>Reconectar</strong> para corrigir.
+                O Facebook revogou o acesso a esta página (provavelmente ela foi desmarcada ao conectar outra).
+                Clique em <strong>Reconectar</strong> e, na tela do Facebook, mantenha <strong>TODAS as páginas marcadas</strong> para não perder o acesso às demais.
               </p>
             </div>
           )}

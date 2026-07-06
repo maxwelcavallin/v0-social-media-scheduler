@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { checkPostsThisMonth } from "@/lib/plans"
-import { publishToFacebook, publishToInstagram } from "@/lib/publish"
+import { publishToFacebook, publishToInstagram, refreshFacebookPageToken, isTokenError } from "@/lib/publish"
 
 // ─── POST /api/posts ──────────────────────────────────────────────────────────
 
@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
       pageId: string
       accountIdMeta: string
       accessToken: string
+      userAccessToken: string | null
     }> = []
 
     for (const accountId of accountIds) {
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
       const targetId = targetResult[0].id
 
       const account = await sql`
-        SELECT platform, page_id, account_id, access_token
+        SELECT platform, page_id, account_id, access_token, user_access_token
         FROM social_accounts WHERE id = ${accountId} LIMIT 1
       `
       if (account.length > 0) {
@@ -128,6 +129,7 @@ export async function POST(request: NextRequest) {
           pageId: account[0].page_id,
           accountIdMeta: account[0].account_id,
           accessToken: account[0].access_token,
+          userAccessToken: account[0].user_access_token,
         })
       }
     }
@@ -137,31 +139,33 @@ export async function POST(request: NextRequest) {
       const publishErrors: string[] = []
 
       for (const target of targets) {
-        try {
-          let platformPostId: string | null = null
-
+        // Publica usando um token específico — usado tanto na tentativa inicial
+        // quanto na retentativa pós auto-cura.
+        const publishWith = (token: string): Promise<string | null> => {
           if (target.platform === "facebook") {
-            platformPostId = await publishToFacebook({
-              access_token: target.accessToken,
+            return publishToFacebook({
+              access_token: token,
               page_id: target.pageId,
               content,
               media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
               media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
-              post_type: postType,
-            })
-          } else if (target.platform === "instagram") {
-            platformPostId = await publishToInstagram({
-              access_token: target.accessToken,
-              account_id: target.accountIdMeta,
-              page_id: target.pageId,
-              content,
-              media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
-              media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
-              cover_url: coverMedia?.url ?? null,
               post_type: postType,
             })
           }
+          return publishToInstagram({
+            access_token: token,
+            account_id: target.accountIdMeta,
+            page_id: target.pageId,
+            content,
+            media_urls: savedMediaUrls.length > 0 ? savedMediaUrls : null,
+            media_types: savedMediaTypes.length > 0 ? savedMediaTypes : null,
+            cover_url: coverMedia?.url ?? null,
+            post_type: postType,
+          })
+        }
 
+        try {
+          const platformPostId = await publishWith(target.accessToken)
           await sql`
             UPDATE post_targets
             SET status = 'published', platform_post_id = ${platformPostId}
@@ -170,11 +174,60 @@ export async function POST(request: NextRequest) {
         } catch (err: any) {
           const errMsg = err?.message || String(err)
           console.error(`[posts] publish failed for ${target.platform}:`, errMsg)
-          publishErrors.push(`${target.platform}: ${errMsg}`)
-          await sql`
-            UPDATE post_targets SET status = 'failed', error_message = ${errMsg}
-            WHERE id = ${target.targetId}
-          `
+
+          if (isTokenError(errMsg)) {
+            // AUTO-CURA (mesma lógica do cron /api/queue/process): tenta re-emitir
+            // um Page Access Token fresco a partir do user_access_token salvo e
+            // republicar. Um user token válido gera page tokens novos na hora, sem
+            // exigir reconexão manual. Só funciona via page_id.
+            if (target.userAccessToken && target.pageId) {
+              console.log(`[posts] tentando auto-cura do token em ${target.platform}`)
+              const freshToken = await refreshFacebookPageToken(target.pageId, target.userAccessToken)
+              if (freshToken) {
+                // Propaga o token fresco para TODAS as cópias dessa página/conta
+                // (Facebook por account_id, Instagram por page_id), em todos os workspaces.
+                await sql`
+                  UPDATE social_accounts
+                  SET access_token = ${freshToken}, needs_reconnect = false,
+                      is_active = true, updated_at = NOW(), last_sync_at = NOW()
+                  WHERE (platform = 'facebook' AND account_id = ${target.pageId})
+                     OR (platform = 'instagram' AND page_id = ${target.pageId})
+                `
+                try {
+                  const retryPostId = await publishWith(freshToken)
+                  await sql`
+                    UPDATE post_targets
+                    SET status = 'published', platform_post_id = ${retryPostId}
+                    WHERE id = ${target.targetId}
+                  `
+                  console.log(`[posts] auto-cura bem-sucedida em ${target.platform}`)
+                  continue // target publicado — pula a marcação de reconexão
+                } catch (retryErr: any) {
+                  console.warn(`[posts] auto-cura falhou na republicação: ${retryErr?.message || retryErr}`)
+                }
+              }
+            }
+
+            // Token inválido/degradado e sem cura: marca a conta para reconexão.
+            // O flag needs_reconnect faz o banner de reconexão aparecer na UI e
+            // impede novas tentativas com token quebrado.
+            await sql`
+              UPDATE social_accounts SET needs_reconnect = true, updated_at = NOW()
+              WHERE id = ${target.accountId}
+            `
+            const reconnectMsg = "Conta precisa reconexão: " + errMsg
+            publishErrors.push(`${target.platform}: ${reconnectMsg}`)
+            await sql`
+              UPDATE post_targets SET status = 'failed', error_message = ${reconnectMsg}
+              WHERE id = ${target.targetId}
+            `
+          } else {
+            publishErrors.push(`${target.platform}: ${errMsg}`)
+            await sql`
+              UPDATE post_targets SET status = 'failed', error_message = ${errMsg}
+              WHERE id = ${target.targetId}
+            `
+          }
         }
       }
 

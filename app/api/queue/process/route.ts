@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import sql from "@/lib/db"
-import { publishToFacebook, publishToInstagram, refreshFacebookPageToken, GRAPH_API, GRAPH_IG } from "@/lib/publish"
+import { publishToFacebook, publishToInstagram, refreshFacebookPageToken, isTokenError, GRAPH_API, GRAPH_IG } from "@/lib/publish"
 
 // Allow up to 300s for processing scheduled posts (videos take time)
 export const maxDuration = 300
@@ -31,20 +31,6 @@ function qlog(
 // Detecta erros de token/permissão do Facebook/Instagram (OAuthException código 190
 // e variações de "impersonating a user's page"). Esses erros significam que o token
 // da conta está inválido/degradado — não adianta retentar; a conta precisa reconexão.
-function isTokenError(message: string): boolean {
-  if (!message) return false
-  const m = message.toLowerCase()
-  return (
-    m.includes("[190]") ||
-    m.includes("impersonating a user") ||
-    m.includes("must be granted before") ||
-    m.includes("session has been invalidated") ||
-    m.includes("access token") && m.includes("expired") ||
-    m.includes("error validating access token") ||
-    m.includes("oauthexception")
-  )
-}
-
 // GET — called by Vercel Cron every 5 minutes
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization")

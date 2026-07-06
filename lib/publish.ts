@@ -1,6 +1,23 @@
 export const GRAPH_API = "https://graph.facebook.com/v22.0"
 export const GRAPH_IG = "https://graph.instagram.com"
 
+// Detecta se uma mensagem de erro do Meta indica token inválido/expirado (erro 190
+// e variantes de OAuth). Compartilhado entre a fila (/api/queue/process) e a
+// publicação imediata (/api/posts) para que ambos disparem a mesma auto-cura.
+export function isTokenError(message: string): boolean {
+  if (!message) return false
+  const m = message.toLowerCase()
+  return (
+    m.includes("[190]") ||
+    m.includes("impersonating a user") ||
+    m.includes("must be granted before") ||
+    m.includes("session has been invalidated") ||
+    (m.includes("access token") && m.includes("expired")) ||
+    m.includes("error validating access token") ||
+    m.includes("oauthexception")
+  )
+}
+
 // Re-emite um Page Access Token fresco a partir de um User Access Token de longa
 // duração. Um único user token válido do dono da página consegue gerar tokens
 // novos para TODAS as páginas que ele administra — é a base da auto-cura: quando o
