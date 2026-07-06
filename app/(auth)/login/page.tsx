@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -56,7 +55,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4 font-sans">
       <div className="w-full max-w-md">
         <div className="flex items-center justify-center gap-2 mb-8">
-          <Image src="/logo-dog.png" alt="SocialDog" width={36} height={36} className="rounded-xl object-contain" />
+          <img src="/logo-dog.png" alt="SocialDog" style={{ width: 36, height: 36 }} className="rounded-xl object-contain" />
           <span className="font-bold text-xl text-foreground">SocialDog</span>
         </div>
 

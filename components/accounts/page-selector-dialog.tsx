@@ -120,12 +120,13 @@ export function PageSelectorDialog({ workspaceId }: Props) {
           Adicionar contas
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      {/* max-w-lg garante espaço para nomes longos sem esticar além de 512px */}
+      <DialogContent className="w-full max-w-lg">
         <DialogHeader>
           <DialogTitle>Adicionar contas a este workspace</DialogTitle>
           <DialogDescription>
-            Escolha quais contas conectadas na sua empresa deseja usar aqui. Nenhuma nova autorização é
-            necessária. Para conectar novas contas, use a Visão Geral.
+            Escolha quais contas da empresa deseja usar aqui. Para conectar novas contas, vá em{" "}
+            <strong>Visão Geral</strong>.
           </DialogDescription>
         </DialogHeader>
 
@@ -137,14 +138,14 @@ export function PageSelectorDialog({ workspaceId }: Props) {
           <div className="flex flex-col items-center gap-2 py-10 text-center">
             <Facebook className="w-8 h-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
-              Nenhuma conta disponível. Conecte uma conta na <strong>Visão Geral</strong> primeiro
-              (via Facebook ou Instagram).
+              Nenhuma conta disponível. Conecte uma conta na <strong>Visão Geral</strong> primeiro.
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 min-w-0">
+            {/* Busca */}
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -153,26 +154,29 @@ export function PageSelectorDialog({ workspaceId }: Props) {
               />
             </div>
 
-            <div className="flex items-center justify-between px-1">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+            {/* Linha selecionar todas */}
+            <div className="flex items-center justify-between px-1 py-0.5">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
                 <Checkbox checked={allFilteredSelected} onCheckedChange={toggleAll} />
-                Selecionar todas {query && `(${filtered.length})`}
+                Selecionar todas {query ? `(${filtered.length})` : ""}
               </label>
-              <span className="text-xs text-muted-foreground">{selected.size} selecionada(s)</span>
+              <span className="text-xs text-muted-foreground shrink-0">{selected.size} selecionada(s)</span>
             </div>
 
-            <ScrollArea className="max-h-80 pr-3 -mr-3">
-              <div className="flex flex-col gap-1.5">
+            {/* Lista com scroll limitado */}
+            <ScrollArea className="h-64">
+              <div className="flex flex-col gap-1.5 pr-3">
                 {filtered.map((acc) => (
                   <label
                     key={acc.id}
                     htmlFor={`acc-${acc.id}`}
-                    className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                    className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50 transition-colors min-w-0"
                   >
                     <Checkbox
                       id={`acc-${acc.id}`}
                       checked={selected.has(acc.id)}
                       onCheckedChange={() => toggle(acc.id)}
+                      className="shrink-0"
                     />
                     <Avatar className="w-9 h-9 shrink-0">
                       <AvatarImage src={acc.pictureUrl || undefined} alt={acc.name || "Conta"} />
@@ -186,27 +190,32 @@ export function PageSelectorDialog({ workspaceId }: Props) {
                         )}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
+
+                    {/* Texto: ocupa o espaço disponível e trunca */}
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <p className="text-sm font-medium text-foreground truncate leading-tight">
                         {acc.name || acc.username || "Conta sem nome"}
                       </p>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground truncate">
+                      <p className="flex items-center gap-1 text-xs text-muted-foreground truncate mt-0.5">
                         {acc.platform === "facebook" ? (
                           <>
-                            <Facebook className="w-3 h-3 text-blue-600" />
-                            Facebook
+                            <Facebook className="w-3 h-3 text-blue-600 shrink-0" />
+                            <span className="truncate">Facebook</span>
                           </>
                         ) : (
                           <>
-                            <Instagram className="w-3 h-3" style={{ color: "#C13584" }} />
-                            {acc.username ? `@${acc.username}` : "Instagram"}
-                            {acc.source === "instagram_direct" ? " · direto" : " · via Facebook"}
+                            <Instagram className="w-3 h-3 shrink-0" style={{ color: "#C13584" }} />
+                            <span className="truncate">
+                              {acc.username ? `@${acc.username}` : "Instagram"}
+                              {acc.source === "instagram_direct" ? " · direto" : " · via Facebook"}
+                            </span>
                           </>
                         )}
-                      </span>
+                      </p>
                     </div>
+
                     {acc.linked && (
-                      <Badge variant="outline" className="gap-1 text-xs shrink-0">
+                      <Badge variant="outline" className="gap-1 text-xs shrink-0 ml-auto">
                         <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                         Vinculada
                       </Badge>
@@ -225,11 +234,11 @@ export function PageSelectorDialog({ workspaceId }: Props) {
 
         {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <DialogFooter>
+        <DialogFooter className="mt-2">
           <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={saving || selected.size === 0}>
+          <Button onClick={handleSave} disabled={saving || selected.size === 0} className="gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Vincular {selected.size > 0 ? `(${selected.size})` : ""}
           </Button>
