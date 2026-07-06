@@ -13,16 +13,12 @@ import {
 } from "@/components/ui/dialog"
 import { Facebook, CheckCircle2, AlertTriangle } from "lucide-react"
 
-interface Props {
-  workspaceId: string
-}
-
-export function ConnectMetaButton({ workspaceId }: Props) {
+export function ConnectMetaButton() {
   const [open, setOpen] = useState(false)
 
   const handleConnect = () => {
     setOpen(false)
-    const url = `/api/social/meta/authorize?workspaceId=${encodeURIComponent(workspaceId)}`
+    const url = `/api/social/meta/authorize`
 
     // Dimensões generosas para o Facebook exibir todas as empresas sem scroll truncado
     const width = 720

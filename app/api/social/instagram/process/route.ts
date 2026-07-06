@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
+import { getUserCompany } from "@/lib/company"
 
 const IG_API = "https://api.instagram.com"
 const GRAPH_IG = "https://graph.instagram.com"
@@ -10,11 +11,18 @@ export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: "Não autenticado." }, { status: 401 })
 
-  const { code, workspaceId, redirectUri } = await request.json()
+  const { code, redirectUri } = await request.json()
 
-  if (!code || !workspaceId) {
+  if (!code) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
+
+  // A conexão pertence à EMPRESA do usuário logado (pool global de contas).
+  const company = await getUserCompany(session.user.id)
+  if (!company) {
+    return NextResponse.json({ error: "Cadastre sua empresa antes de conectar contas." }, { status: 400 })
+  }
+  const companyId = company.id
 
   const CLIENT_ID = process.env.INSTAGRAM_APP_ID
   const appSecret = process.env.INSTAGRAM_APP_SECRET
@@ -121,28 +129,40 @@ export async function POST(request: NextRequest) {
     // Long-lived token expira em 60 dias
     const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
 
-    // Step 4: Salvar conta Instagram com token_expires_at
+    // Step 4: Salvar a conta Instagram no POOL GLOBAL da empresa (connected_accounts).
+    // A conta fica disponível para qualquer workspace da empresa selecionar depois.
+    // Instagram direto não tem página do Facebook (page_id = NULL) nem user token.
     await sql`
-      INSERT INTO social_accounts
-        (workspace_id, platform, account_id, page_id, account_name, account_username,
-         profile_picture_url, access_token, token_expires_at, is_active, last_sync_at, created_at, updated_at)
+      INSERT INTO connected_accounts
+        (company_id, connected_by_user_id, platform, external_id, page_id,
+         name, username, picture_url, access_token, user_access_token,
+         token_expires_at, fb_user_id, source, created_at, updated_at)
       VALUES
-        (${workspaceId}, 'instagram', ${profile.id}, NULL,
+        (${companyId}, ${session.user.id}, 'instagram', ${profile.id}, NULL,
          ${profile.name || profile.username || "Instagram"},
          ${profile.username || null},
          ${profile.profile_picture_url || null},
-         ${longToken}, ${tokenExpiresAt.toISOString()}, true, NOW(), NOW(), NOW())
-      ON CONFLICT (workspace_id, platform, account_id)
+         ${longToken}, NULL, ${tokenExpiresAt.toISOString()}, NULL, 'instagram_direct', NOW(), NOW())
+      ON CONFLICT (company_id, platform, external_id)
       DO UPDATE SET
-        account_name        = EXCLUDED.account_name,
-        account_username    = EXCLUDED.account_username,
-        profile_picture_url = EXCLUDED.profile_picture_url,
-        access_token        = EXCLUDED.access_token,
-        token_expires_at    = EXCLUDED.token_expires_at,
-        page_id             = NULL,
-        is_active           = true,
-        last_sync_at        = NOW(),
-        updated_at          = NOW()
+        name             = EXCLUDED.name,
+        username         = EXCLUDED.username,
+        picture_url      = EXCLUDED.picture_url,
+        access_token     = EXCLUDED.access_token,
+        token_expires_at = EXCLUDED.token_expires_at,
+        page_id          = NULL,
+        source           = 'instagram_direct',
+        updated_at       = NOW()
+    `
+
+    // Propaga o token fresco para social_accounts já vinculadas desta conta IG
+    // direta em qualquer workspace da empresa (mantém a publicação funcionando).
+    await sql`
+      UPDATE social_accounts
+      SET access_token = ${longToken}, token_expires_at = ${tokenExpiresAt.toISOString()},
+          needs_reconnect = false, is_active = true, updated_at = NOW(), last_sync_at = NOW()
+      WHERE platform = 'instagram' AND account_id = ${profile.id} AND page_id IS NULL
+        AND workspace_id IN (SELECT id FROM "organization" WHERE company_id = ${companyId})
     `
 
     return NextResponse.json({

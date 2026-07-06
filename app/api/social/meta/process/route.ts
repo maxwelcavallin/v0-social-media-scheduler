@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
-import { checkSocialAccountLimit } from "@/lib/plans"
+import { getUserCompany } from "@/lib/company"
 import { getAppUrl } from "@/lib/app-url"
 
 const GRAPH_API = "https://graph.facebook.com/v22.0"
@@ -28,93 +28,50 @@ async function isValidPageToken(pageId: string, pageToken: string): Promise<{ va
   }
 }
 
-// Insert or update a social account
-async function upsertAccount(fields: {
-  workspaceId: string
-  platform: string
-  accountName: string
-  accountUsername: string | null
-  accountId: string
-  pageId: string | null
-  accessToken: string
-  profilePictureUrl: string | null
-  userAccessToken: string | null
-  fbUserId: string | null
-}) {
-  await sql`
-    INSERT INTO social_accounts (
-      workspace_id, platform, account_name, account_username, account_id, page_id,
-      access_token, profile_picture_url, user_access_token, fb_user_id,
-      is_active, created_at, updated_at, last_sync_at
-    )
-    VALUES (
-      ${fields.workspaceId}, ${fields.platform}, ${fields.accountName},
-      ${fields.accountUsername}, ${fields.accountId}, ${fields.pageId},
-      ${fields.accessToken}, ${fields.profilePictureUrl},
-      ${fields.userAccessToken}, ${fields.fbUserId},
-      true, NOW(), NOW(), NOW()
-    )
-    ON CONFLICT (workspace_id, platform, account_id) DO UPDATE SET
-      access_token        = EXCLUDED.access_token,
-      account_name        = EXCLUDED.account_name,
-      account_username    = EXCLUDED.account_username,
-      profile_picture_url = EXCLUDED.profile_picture_url,
-      page_id             = EXCLUDED.page_id,
-      user_access_token   = EXCLUDED.user_access_token,
-      fb_user_id          = EXCLUDED.fb_user_id,
-      is_active           = true,
-      needs_reconnect     = false,
-      updated_at          = NOW(),
-      last_sync_at        = NOW()
-  `
-
-  // O ON CONFLICT acima já garante que a reconexão dentro do workspace correto
-  // atualiza o token certo sem afetar outras contas ou outros workspaces.
-  // O user_access_token salvo permite a auto-cura na publicação (lib/publish).
-}
-
-// Grava/atualiza uma página no CATÁLOGO global do usuário (meta_page_catalog).
-// O catálogo guarda TODAS as páginas concedidas na autorização do Facebook, por
-// usuário do app — independente de workspace. É a fonte do seletor: o usuário
-// conecta uma vez (concedendo todas as páginas) e depois escolhe, em cada
-// workspace, quais páginas usar — sem refazer o OAuth (o que evita a revogação
-// de acesso do Facebook que causava o erro 190 entre contas do mesmo usuário).
-async function upsertCatalogPage(fields: {
+// Grava/atualiza uma conta no POOL GLOBAL da empresa (connected_accounts).
+// O pool guarda TODAS as contas concedidas na autorização (páginas do Facebook e
+// Instagram vinculado), escopado por empresa. Todos os workspaces da empresa
+// enxergam este pool; o seletor de cada workspace materializa as escolhidas em
+// social_accounts — sem refazer o OAuth (evitando a revogação/erro 190).
+async function upsertConnectedAccount(fields: {
+  companyId: string
   connectedByUserId: string
-  fbUserId: string | null
-  pageId: string
-  pageName: string
-  pageAccessToken: string
-  userAccessToken: string | null
+  platform: "facebook" | "instagram"
+  externalId: string
+  pageId: string | null
+  name: string | null
+  username: string | null
   pictureUrl: string | null
-  igBusinessAccountId: string | null
-  igUsername: string | null
-  igName: string | null
-  igProfilePictureUrl: string | null
+  accessToken: string
+  userAccessToken: string | null
+  tokenExpiresAt: string | null
+  fbUserId: string | null
+  source: "facebook" | "instagram_direct"
 }) {
   await sql`
-    INSERT INTO meta_page_catalog (
-      connected_by_user_id, fb_user_id, page_id, page_name, page_access_token,
-      user_access_token, picture_url, ig_business_account_id, ig_username,
-      ig_name, ig_profile_picture_url, created_at, updated_at
+    INSERT INTO connected_accounts (
+      company_id, connected_by_user_id, platform, external_id, page_id,
+      name, username, picture_url, access_token, user_access_token,
+      token_expires_at, fb_user_id, source, created_at, updated_at
     )
     VALUES (
-      ${fields.connectedByUserId}, ${fields.fbUserId}, ${fields.pageId},
-      ${fields.pageName}, ${fields.pageAccessToken}, ${fields.userAccessToken},
-      ${fields.pictureUrl}, ${fields.igBusinessAccountId}, ${fields.igUsername},
-      ${fields.igName}, ${fields.igProfilePictureUrl}, NOW(), NOW()
+      ${fields.companyId}, ${fields.connectedByUserId}, ${fields.platform},
+      ${fields.externalId}, ${fields.pageId}, ${fields.name}, ${fields.username},
+      ${fields.pictureUrl}, ${fields.accessToken}, ${fields.userAccessToken},
+      ${fields.tokenExpiresAt}, ${fields.fbUserId}, ${fields.source}, NOW(), NOW()
     )
-    ON CONFLICT (connected_by_user_id, page_id) DO UPDATE SET
-      fb_user_id             = EXCLUDED.fb_user_id,
-      page_name              = EXCLUDED.page_name,
-      page_access_token      = EXCLUDED.page_access_token,
-      user_access_token      = EXCLUDED.user_access_token,
-      picture_url            = EXCLUDED.picture_url,
-      ig_business_account_id = EXCLUDED.ig_business_account_id,
-      ig_username            = EXCLUDED.ig_username,
-      ig_name                = EXCLUDED.ig_name,
-      ig_profile_picture_url = EXCLUDED.ig_profile_picture_url,
-      updated_at             = NOW()
+    ON CONFLICT (company_id, platform, external_id) DO UPDATE SET
+      connected_by_user_id = EXCLUDED.connected_by_user_id,
+      page_id              = EXCLUDED.page_id,
+      name                 = EXCLUDED.name,
+      username             = EXCLUDED.username,
+      picture_url          = EXCLUDED.picture_url,
+      access_token         = EXCLUDED.access_token,
+      user_access_token    = EXCLUDED.user_access_token,
+      token_expires_at     = EXCLUDED.token_expires_at,
+      fb_user_id           = EXCLUDED.fb_user_id,
+      source               = EXCLUDED.source,
+      updated_at           = NOW()
   `
 }
 
@@ -125,24 +82,24 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { code, workspaceId, redirectUri: bodyRedirectUri } = body
+  const { code, redirectUri: bodyRedirectUri } = body
 
-  if (!code || !workspaceId) {
+  if (!code) {
     return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 })
   }
 
-  // Verificar limite de contas sociais do plano
-  const accountLimit = await checkSocialAccountLimit(session.user.id, workspaceId)
-  if (!accountLimit.allowed) {
+  // A conexão pertence à EMPRESA do usuário logado.
+  const company = await getUserCompany(session.user.id)
+  if (!company) {
     return NextResponse.json(
-      { error: `Seu plano gratuito permite apenas ${accountLimit.limit} contas sociais. Faça upgrade para o Pro para contas ilimitadas.`, upgrade: true },
-      { status: 403 }
+      { error: "Cadastre sua empresa antes de conectar contas." },
+      { status: 400 }
     )
   }
+  const companyId = company.id
 
-  // Usa o redirectUri enviado pelo cliente (passado pelo callback), que é idêntico
+  // Usa o redirectUri enviado pelo cliente (passado pelo callback), idêntico
   // ao que foi enviado ao Facebook no momento da autorização — obrigatório para validação.
-  // Fallback para reconstrução a partir do host apenas se não vier no body.
   const redirectUri = bodyRedirectUri || `${getAppUrl(request)}/api/social/meta/callback`
 
   const appId = process.env.FACEBOOK_APP_ID
@@ -152,7 +109,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Configuração do app Facebook ausente." }, { status: 500 })
   }
 
-  console.log("[v0] meta/process: iniciando. workspaceId:", workspaceId, "redirectUri:", redirectUri)
+  console.log("[v0] meta/process: iniciando. companyId:", companyId, "redirectUri:", redirectUri)
 
   try {
     // Step 1: Exchange code for short-lived token
@@ -307,8 +264,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Step 6: Save pages and linked Instagram accounts
-    console.log("[v0] meta/process step6: salvando", pages.length, "páginas")
+    // Step 6: Gravar páginas + Instagram vinculado no POOL da empresa (connected_accounts)
+    console.log("[v0] meta/process step6: salvando", pages.length, "páginas no pool da empresa")
     const saved: { platform: string; name: string }[] = []
     const rejected: { name: string; reason: string }[] = [] // páginas com token inválido
     const reconnectedAccountIds: string[] = [] // IDs das contas atualizadas para reatender posts falhos
@@ -325,8 +282,6 @@ export async function POST(request: NextRequest) {
       const pageToken = page.access_token
 
       // VALIDAÇÃO CRÍTICA: confirmar que o page token funciona ANTES de salvar.
-      // Tokens degradados (sem permissões de página efetivamente concedidas) passam
-      // pela verificação de existência mas falham em toda publicação com erro 190.
       const validation = await isValidPageToken(page.id, pageToken)
       if (!validation.valid) {
         console.warn("[v0] meta/process: página", page.id, page.name, "token INVÁLIDO — pulando. Motivo:", validation.reason)
@@ -336,38 +291,23 @@ export async function POST(request: NextRequest) {
 
       console.log("[v0] meta/process: salvando página", page.name, "pageToken válido. prefix:", pageToken?.substring(0, 8))
 
-      await upsertAccount({
-        workspaceId,
+      await upsertConnectedAccount({
+        companyId,
+        connectedByUserId: session.user.id,
         platform: "facebook",
-        accountName: page.name,
-        accountUsername: null,
-        accountId: page.id,
+        externalId: page.id,
         pageId: page.id,
+        name: page.name,
+        username: null,
+        pictureUrl: page.picture?.url ?? null,
         accessToken: pageToken,
-        profilePictureUrl: page.picture?.url ?? null,
         userAccessToken: userToken,
+        tokenExpiresAt: null,
         fbUserId: userId ?? null,
+        source: "facebook",
       })
       reconnectedAccountIds.push(page.id)
       saved.push({ platform: "facebook", name: page.name })
-
-      // Grava no CATÁLOGO global do usuário — fonte do seletor por workspace.
-      // Assim o usuário conecta uma vez (concedendo todas as páginas) e depois
-      // vincula cada página ao workspace desejado sem refazer o OAuth.
-      const igBiz = page.instagram_business_account
-      await upsertCatalogPage({
-        connectedByUserId: session.user.id,
-        fbUserId: userId ?? null,
-        pageId: page.id,
-        pageName: page.name,
-        pageAccessToken: pageToken,
-        userAccessToken: userToken,
-        pictureUrl: page.picture?.url ?? null,
-        igBusinessAccountId: igBiz?.id ?? null,
-        igUsername: igBiz?.username ?? null,
-        igName: igBiz?.name ?? null,
-        igProfilePictureUrl: igBiz?.profile_picture_url ?? null,
-      })
 
       // Save linked Instagram Business Account
       if (page.instagram_business_account) {
@@ -379,17 +319,20 @@ export async function POST(request: NextRequest) {
         const igData = await igRes.json()
 
         if (!igData.error) {
-          await upsertAccount({
-            workspaceId,
+          await upsertConnectedAccount({
+            companyId,
+            connectedByUserId: session.user.id,
             platform: "instagram",
-            accountName: igData.name || igData.username || "Instagram",
-            accountUsername: igData.username ?? null,
-            accountId: igData.id,
+            externalId: igData.id,
             pageId: page.id,
+            name: igData.name || igData.username || "Instagram",
+            username: igData.username ?? null,
+            pictureUrl: igData.profile_picture_url ?? null,
             accessToken: pageToken,
-            profilePictureUrl: igData.profile_picture_url ?? null,
             userAccessToken: userToken,
+            tokenExpiresAt: null,
             fbUserId: userId ?? null,
+            source: "facebook",
           })
           reconnectedAccountIds.push(igData.id)
           saved.push({ platform: "instagram", name: igData.username || igData.name })
@@ -398,12 +341,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6b: Propagar pageTokens frescos para todas as cópias das páginas deste
-    // usuário que já existem no banco em outros workspaces.
-    // Motivação: o Meta invalida o userToken anterior (e todos os pageTokens dele)
-    // sempre que uma nova autorização OAuth é concluída. Páginas do mesmo usuário
-    // conectadas em outros workspaces ficam com token morto. Aqui buscamos o pageToken
-    // fresco de cada página via /me/accounts (usando o userToken recém-emitido) e
-    // atualizamos TODAS as linhas no banco com esse token — independente de workspace.
+    // usuário que já existem no banco (pool da empresa + social_accounts dos
+    // workspaces da empresa). O Meta invalida o userToken anterior (e seus
+    // pageTokens) a cada nova autorização OAuth; sem isto, contas já vinculadas
+    // em outros workspaces ficariam com token morto.
     try {
       const freshPagesRes = await fetch(
         `${GRAPH_API}/me/accounts?access_token=${userToken}&limit=100&fields=id,access_token`
@@ -414,12 +355,10 @@ export async function POST(request: NextRequest) {
         for (const freshPage of freshPagesData.data) {
           if (!freshPage.access_token) continue
 
-          // Validar o token fresco antes de propagar
           const freshValidation = await isValidPageToken(freshPage.id, freshPage.access_token)
           if (!freshValidation.valid) continue
 
-          // Atualizar TODAS as linhas Facebook no banco com esse account_id,
-          // exceto o workspace atual que já foi atualizado pelo ON CONFLICT do Step 6.
+          // Atualizar social_accounts Facebook desta página em TODOS os workspaces da empresa
           await sql`
             UPDATE social_accounts
             SET access_token      = ${freshPage.access_token},
@@ -431,11 +370,10 @@ export async function POST(request: NextRequest) {
                 last_sync_at      = NOW()
             WHERE platform   = 'facebook'
               AND account_id = ${freshPage.id}
-              AND workspace_id != ${workspaceId}
+              AND workspace_id IN (SELECT id FROM "organization" WHERE company_id = ${companyId})
           `
 
-          // Atualizar também as contas Instagram vinculadas a esta página FB
-          // (o pageToken do Facebook é o mesmo token usado para publicar no IG via page_id)
+          // Atualizar as contas Instagram vinculadas a esta página FB
           await sql`
             UPDATE social_accounts
             SET access_token      = ${freshPage.access_token},
@@ -447,45 +385,40 @@ export async function POST(request: NextRequest) {
                 last_sync_at      = NOW()
             WHERE platform = 'instagram'
               AND page_id  = ${freshPage.id}
-              AND workspace_id != ${workspaceId}
+              AND workspace_id IN (SELECT id FROM "organization" WHERE company_id = ${companyId})
           `
 
-          // Mantém o catálogo do usuário com o token fresco desta página.
+          // Mantém o pool da empresa com o token fresco desta página (FB e IG vinculado).
           await sql`
-            UPDATE meta_page_catalog
-            SET page_access_token = ${freshPage.access_token},
+            UPDATE connected_accounts
+            SET access_token      = ${freshPage.access_token},
                 user_access_token = ${userToken},
                 fb_user_id        = ${userId ?? null},
                 updated_at        = NOW()
-            WHERE connected_by_user_id = ${session.user.id}
-              AND page_id = ${freshPage.id}
+            WHERE company_id = ${companyId}
+              AND (page_id = ${freshPage.id} OR (platform = 'facebook' AND external_id = ${freshPage.id}))
           `
 
           console.log(
-            `[v0] meta/process step6b: token propagado para página ${freshPage.id} em outros workspaces`
+            `[v0] meta/process step6b: token propagado para página ${freshPage.id} na empresa ${companyId}`
           )
         }
       }
     } catch (e) {
-      // Não interromper o fluxo principal se a propagação falhar
       console.warn("[v0] meta/process step6b: erro ao propagar tokens:", e instanceof Error ? e.message : e)
     }
 
-    // Step 7: Resetar posts agendados que falharam por falta de permissão nas contas
-    // recém-reconectadas. Isso permite que o cron os publique na próxima execução.
+    // Step 7: Reviver posts agendados que falharam por falta de permissão nas contas
+    // recém-reconectadas, em qualquer workspace da empresa.
     if (reconnectedAccountIds.length > 0) {
-      // Busca as social_accounts.id (UUIDs) a partir dos account_id externos reconectados,
-      // filtrando pelo workspace da reconexão para não reativar posts de outros workspaces.
       const reconnectedRows = await sql`
         SELECT id FROM social_accounts
         WHERE account_id = ANY(${reconnectedAccountIds}::text[])
-          AND workspace_id = ${workspaceId}
+          AND workspace_id IN (SELECT id FROM "organization" WHERE company_id = ${companyId})
       `
       const reconnectedUuids = reconnectedRows.map((r: any) => r.id)
 
       if (reconnectedUuids.length > 0) {
-        // 1. Revive os targets que falharam por erro de permissão/reconexão (190)
-        //    nas contas recém-reconectadas, voltando-os para 'pending'.
         const revived = await sql`
           UPDATE post_targets
           SET status = 'pending', error_message = NULL
@@ -502,10 +435,6 @@ export async function POST(request: NextRequest) {
         const revivedPostIds = Array.from(new Set(revived.map((r: any) => r.post_id)))
 
         if (revivedPostIds.length > 0) {
-          // 2. Reabre a fila desses posts INDEPENDENTE do status atual (pending,
-          //    failed ou done — o caso de publicação parcial fica 'done'). Como os
-          //    targets já publicados permanecem 'published', a republicação só
-          //    atinge os targets revividos — sem duplicar o que já foi postado.
           await sql`
             UPDATE post_queue
             SET status = 'pending', attempts = 0, last_error = NULL,
@@ -513,7 +442,6 @@ export async function POST(request: NextRequest) {
             WHERE post_id = ANY(${revivedPostIds}::uuid[])
           `
 
-          // 3. Reabre o post para o cron processar novamente.
           await sql`
             UPDATE posts
             SET status = 'scheduled', error_message = NULL, updated_at = NOW()
