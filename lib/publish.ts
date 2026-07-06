@@ -30,9 +30,11 @@ export async function refreshFacebookPageToken(
   }
 }
 
-// Aguarda o Meta processar o vídeo após o upload (Fase 2 → Fase 3).
-// Verifica o status via /{video_id}?fields=status até o vídeo estar pronto
-// ou o timeout ser atingido. Equivalente ao pollContainer do Instagram.
+// Aguarda o Meta terminar de BAIXAR/receber o vídeo (uploading_phase) antes de
+// chamarmos a fase 'finish'. IMPORTANTE (doc do Meta): para video_stories e
+// video_reels devemos chamar 'finish' assim que o UPLOAD termina, MESMO que o
+// processing_phase ainda esteja 'not_started' — o Meta só processa o vídeo depois
+// do finish. Esperar o processing aqui trava para sempre (bug do timeout).
 async function pollFacebookVideo(
   videoId: string,
   accessToken: string,
@@ -65,8 +67,17 @@ async function pollFacebookVideo(
       lastStatusSnapshot = snapshot
     }
 
-    // Pronto: vídeo processado (qualquer um dos sinais de conclusão)
-    if (videoStatus === "ready" || progress === 100 || processingPhase === "complete") return
+    // PRONTO PARA FINALIZAR: basta o upload ter terminado. Não esperamos o
+    // processing (que só começa após o finish). Também aceitamos os sinais de
+    // conclusão total, caso o Meta já tenha processado.
+    if (
+      uploadingPhase === "complete" ||
+      videoStatus === "ready" ||
+      progress === 100 ||
+      processingPhase === "complete"
+    ) {
+      return
+    }
 
     // Falha rápida: o Meta já reportou erro em qualquer fase — não espera o timeout
     if (videoStatus === "error" || uploadingPhase === "error" || processingPhase === "error") {
@@ -81,7 +92,7 @@ async function pollFacebookVideo(
     await new Promise((r) => setTimeout(r, interval))
     interval = Math.min(interval + 2000, 8000)
   }
-  throw new Error("Tempo esgotado aguardando processamento do vídeo no Facebook")
+  throw new Error("Tempo esgotado aguardando o Facebook receber o vídeo (upload)")
 }
 
 export async function publishToFacebook(item: {
