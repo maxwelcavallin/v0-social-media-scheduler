@@ -2,13 +2,13 @@ import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Building2, Plus, ImageIcon, CheckCircle2, Clock } from "lucide-react"
-import Link from "next/link"
+import { Card, CardContent } from "@/components/ui/card"
+import { Building2, Plus, CheckCircle2, Clock } from "lucide-react"
 import { CreateWorkspaceDialog } from "@/components/workspace/create-workspace-dialog"
-import { WorkspaceActions } from "@/components/workspace/workspace-actions"
+import { WorkspacesGrid } from "@/components/workspace/workspaces-grid"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { RecentPostsFilter } from "@/components/dashboard/recent-posts-filter"
+import { CompanyAccountsSection } from "@/components/dashboard/company-accounts-section"
 
 export default async function DashboardPage() {
   const session = await getSession()
@@ -126,14 +126,15 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Workspaces */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-foreground">Workspaces</h2>
-          <span className="text-sm text-muted-foreground">{workspaces.length} workspace{workspaces.length !== 1 ? "s" : ""}</span>
-        </div>
+      {/* Contas conectadas (nível da empresa) */}
+      <CompanyAccountsSection />
 
-        {workspaces.length === 0 ? (
+      {/* Workspaces */}
+      {workspaces.length === 0 ? (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-foreground">Workspaces</h2>
+          </div>
           <EmptyState
             icon={Building2}
             title="Nenhum workspace ainda"
@@ -147,50 +148,10 @@ export default async function DashboardPage() {
               </CreateWorkspaceDialog>
             }
           />
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {workspaces.map((ws: any) => (
-              <Link key={ws.id} href={`/workspace/${ws.id}`}>
-                <Card className="hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer h-full relative group">
-                  <WorkspaceActions workspace={ws} isAdmin={isAdmin} />
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <Building2 className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 pr-6">
-                        <CardTitle className="text-base truncate">{ws.name}</CardTitle>
-                        <CardDescription className="text-xs">@{ws.slug}</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5" />
-                        {ws.accounts_count} conta{ws.accounts_count !== 1 ? "s" : ""}
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <ImageIcon className="w-3.5 h-3.5" />
-                        {ws.posts_count} post{ws.posts_count !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-
-            <CreateWorkspaceDialog>
-              <Card className="border-dashed hover:border-primary/40 cursor-pointer transition-all flex items-center justify-center min-h-[100px]">
-                <div className="flex flex-col items-center gap-2 text-muted-foreground hover:text-primary transition-colors p-6">
-                  <Plus className="w-6 h-6" />
-                  <span className="text-sm font-medium">Novo Workspace</span>
-                </div>
-              </Card>
-            </CreateWorkspaceDialog>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <WorkspacesGrid workspaces={workspaces as any} isAdmin={isAdmin} />
+      )}
 
       {/* Recent Posts */}
       {recentPosts.length > 0 && (

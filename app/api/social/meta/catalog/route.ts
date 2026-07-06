@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
+import { getWorkspaceCompany } from "@/lib/company"
+import { checkSocialAccountLimit } from "@/lib/plans"
 
 // GET /api/social/meta/catalog?workspaceId=...
-// Lista as páginas do CATÁLOGO global do usuário (todas as páginas que ele já
-// concedeu ao app via Facebook) e marca quais já estão vinculadas ao workspace.
-// É a fonte do seletor: o usuário conecta uma vez e escolhe aqui quais páginas
-// usar em cada workspace, SEM refazer o OAuth (evitando a revogação/erro 190).
+// Lista o POOL GLOBAL da empresa (connected_accounts) — todas as contas já
+// conectadas na Visão Geral (páginas do Facebook, Instagram vinculado e
+// Instagram direto) — e marca quais já estão vinculadas a este workspace.
+// É a fonte do seletor: conecta-se uma vez na empresa e escolhe-se aqui quais
+// contas usar em cada workspace, SEM refazer o OAuth.
 export async function GET(req: Request) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
@@ -15,138 +18,114 @@ export async function GET(req: Request) {
   const workspaceId = searchParams.get("workspaceId")
   if (!workspaceId) return NextResponse.json({ error: "workspaceId obrigatório" }, { status: 400 })
 
-  // Confirma que o usuário pertence ao workspace
-  const member = await sql`
-    SELECT 1 FROM "member"
-    WHERE organization_id = ${workspaceId} AND user_id = ${session.user.id}
-    LIMIT 1
-  `
-  if (member.length === 0) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  // Confirma que o usuário pertence ao workspace e obtém a empresa dona dele.
+  const ctx = await getWorkspaceCompany(session.user.id, workspaceId)
+  if (!ctx) return NextResponse.json({ error: "forbidden" }, { status: 403 })
 
-  const [catalog, linked] = await Promise.all([
+  const [pool, linked] = await Promise.all([
     sql`
-      SELECT page_id, page_name, picture_url,
-             ig_business_account_id, ig_username, ig_name, ig_profile_picture_url,
-             updated_at
-      FROM meta_page_catalog
-      WHERE connected_by_user_id = ${session.user.id}
-      ORDER BY page_name ASC
+      SELECT id, platform, external_id, page_id, name, username, picture_url, source, updated_at
+      FROM connected_accounts
+      WHERE company_id = ${ctx.companyId}
+      ORDER BY platform ASC, name ASC
     `,
     sql`
-      SELECT account_id, platform, page_id
+      SELECT account_id, platform
       FROM social_accounts
       WHERE workspace_id = ${workspaceId}
     `,
   ])
 
-  // Um page_id está "vinculado" ao workspace se existe uma social_account do
-  // Facebook com aquele account_id (=page_id) nele.
-  const linkedPageIds = new Set(
-    linked.filter((a: any) => a.platform === "facebook").map((a: any) => a.account_id),
-  )
+  const linkedKeys = new Set(linked.map((a: any) => `${a.platform}:${a.account_id}`))
 
-  const pages = catalog.map((p: any) => ({
-    pageId: p.page_id,
-    pageName: p.page_name,
-    pictureUrl: p.picture_url,
-    igUsername: p.ig_username,
-    igName: p.ig_name,
-    igProfilePictureUrl: p.ig_profile_picture_url,
-    hasInstagram: Boolean(p.ig_business_account_id),
-    linked: linkedPageIds.has(p.page_id),
+  const accounts = pool.map((a: any) => ({
+    id: a.id,
+    platform: a.platform as "facebook" | "instagram",
+    externalId: a.external_id,
+    pageId: a.page_id,
+    name: a.name,
+    username: a.username,
+    pictureUrl: a.picture_url,
+    source: a.source as "facebook" | "instagram_direct",
+    linked: linkedKeys.has(`${a.platform}:${a.external_id}`),
   }))
 
-  return NextResponse.json({ pages })
+  return NextResponse.json({ accounts })
 }
 
 // POST /api/social/meta/catalog
-// body: { workspaceId: string, pageIds: string[] }
-// Vincula as páginas escolhidas ao workspace, criando as social_accounts (FB e IG
-// vinculado, quando houver) a partir do catálogo — sem refazer o OAuth.
+// body: { workspaceId: string, accountIds: string[] }  (ids de connected_accounts)
+// Vincula as contas escolhidas ao workspace, criando as social_accounts a partir
+// do pool da empresa — sem refazer o OAuth.
 export async function POST(req: Request) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
   const body = await req.json().catch(() => null)
   const workspaceId: string | undefined = body?.workspaceId
-  const pageIds: string[] = Array.isArray(body?.pageIds) ? body.pageIds : []
+  const accountIds: string[] = Array.isArray(body?.accountIds) ? body.accountIds : []
   if (!workspaceId) return NextResponse.json({ error: "workspaceId obrigatório" }, { status: 400 })
-  if (pageIds.length === 0) return NextResponse.json({ error: "Selecione ao menos uma página" }, { status: 400 })
+  if (accountIds.length === 0) return NextResponse.json({ error: "Selecione ao menos uma conta" }, { status: 400 })
 
-  const member = await sql`
-    SELECT 1 FROM "member"
-    WHERE organization_id = ${workspaceId} AND user_id = ${session.user.id}
-    LIMIT 1
-  `
-  if (member.length === 0) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  const ctx = await getWorkspaceCompany(session.user.id, workspaceId)
+  if (!ctx) return NextResponse.json({ error: "forbidden" }, { status: 403 })
 
-  const catalogPages = await sql`
-    SELECT page_id, page_name, page_access_token, user_access_token, fb_user_id,
-           picture_url, ig_business_account_id, ig_username, ig_name, ig_profile_picture_url
-    FROM meta_page_catalog
-    WHERE connected_by_user_id = ${session.user.id}
-      AND page_id = ANY(${pageIds}::text[])
+  const poolAccounts = await sql`
+    SELECT id, platform, external_id, page_id, name, username, picture_url,
+           access_token, user_access_token, token_expires_at, fb_user_id
+    FROM connected_accounts
+    WHERE company_id = ${ctx.companyId}
+      AND id = ANY(${accountIds}::uuid[])
   `
 
   let linkedCount = 0
-  for (const page of catalogPages) {
-    // Facebook
+  let limitReached = false
+  for (const acc of poolAccounts) {
+    // Respeita o limite de contas sociais do plano no momento da seleção.
+    const accountLimit = await checkSocialAccountLimit(session.user.id, workspaceId)
+    if (!accountLimit.allowed) {
+      limitReached = true
+      break
+    }
+
     await sql`
       INSERT INTO social_accounts (
         workspace_id, platform, account_name, account_username, account_id, page_id,
-        access_token, profile_picture_url, user_access_token, fb_user_id,
+        access_token, token_expires_at, profile_picture_url, user_access_token, fb_user_id,
         is_active, needs_reconnect, created_at, updated_at, last_sync_at
       )
       VALUES (
-        ${workspaceId}, 'facebook', ${page.page_name}, NULL, ${page.page_id}, ${page.page_id},
-        ${page.page_access_token}, ${page.picture_url}, ${page.user_access_token}, ${page.fb_user_id},
+        ${workspaceId}, ${acc.platform}, ${acc.name}, ${acc.username}, ${acc.external_id}, ${acc.page_id},
+        ${acc.access_token}, ${acc.token_expires_at}, ${acc.picture_url}, ${acc.user_access_token}, ${acc.fb_user_id},
         true, false, NOW(), NOW(), NOW()
       )
       ON CONFLICT (workspace_id, platform, account_id) DO UPDATE SET
-        access_token      = EXCLUDED.access_token,
-        account_name      = EXCLUDED.account_name,
-        page_id           = EXCLUDED.page_id,
-        user_access_token = EXCLUDED.user_access_token,
-        fb_user_id        = EXCLUDED.fb_user_id,
+        access_token        = EXCLUDED.access_token,
+        account_name        = EXCLUDED.account_name,
+        account_username    = EXCLUDED.account_username,
+        page_id             = EXCLUDED.page_id,
+        token_expires_at    = EXCLUDED.token_expires_at,
+        user_access_token   = EXCLUDED.user_access_token,
+        fb_user_id          = EXCLUDED.fb_user_id,
         profile_picture_url = EXCLUDED.profile_picture_url,
-        is_active         = true,
-        needs_reconnect   = false,
-        updated_at        = NOW(),
-        last_sync_at      = NOW()
+        is_active           = true,
+        needs_reconnect     = false,
+        updated_at          = NOW(),
+        last_sync_at        = NOW()
     `
-
-    // Instagram vinculado (se houver)
-    if (page.ig_business_account_id) {
-      await sql`
-        INSERT INTO social_accounts (
-          workspace_id, platform, account_name, account_username, account_id, page_id,
-          access_token, profile_picture_url, user_access_token, fb_user_id,
-          is_active, needs_reconnect, created_at, updated_at, last_sync_at
-        )
-        VALUES (
-          ${workspaceId}, 'instagram',
-          ${page.ig_name || page.ig_username || "Instagram"}, ${page.ig_username},
-          ${page.ig_business_account_id}, ${page.page_id},
-          ${page.page_access_token}, ${page.ig_profile_picture_url},
-          ${page.user_access_token}, ${page.fb_user_id},
-          true, false, NOW(), NOW(), NOW()
-        )
-        ON CONFLICT (workspace_id, platform, account_id) DO UPDATE SET
-          access_token      = EXCLUDED.access_token,
-          account_name      = EXCLUDED.account_name,
-          account_username  = EXCLUDED.account_username,
-          page_id           = EXCLUDED.page_id,
-          user_access_token = EXCLUDED.user_access_token,
-          fb_user_id        = EXCLUDED.fb_user_id,
-          profile_picture_url = EXCLUDED.profile_picture_url,
-          is_active         = true,
-          needs_reconnect   = false,
-          updated_at        = NOW(),
-          last_sync_at      = NOW()
-      `
-    }
     linkedCount++
   }
 
-  return NextResponse.json({ ok: true, linked: linkedCount })
+  if (limitReached && linkedCount === 0) {
+    return NextResponse.json(
+      { error: "Seu plano gratuito atingiu o limite de contas sociais. Faça upgrade para o Pro.", upgrade: true },
+      { status: 403 }
+    )
+  }
+
+  return NextResponse.json({
+    ok: true,
+    linked: linkedCount,
+    ...(limitReached ? { warning: "Algumas contas não foram vinculadas por limite do plano." } : {}),
+  })
 }

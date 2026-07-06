@@ -12,14 +12,50 @@ conceito de "workspace" no lado do Meta. Desmarcar uma página numa reconexão
 **revoga** o acesso do app àquela página em todo lugar (causa do erro 190 entre
 contas do mesmo usuário).
 
-Para conciliar isso com múltiplos workspaces, separamos duas camadas:
+Para conciliar isso com múltiplos workspaces, o modelo tem TRÊS camadas:
 
-- **`meta_page_catalog`** — catálogo GLOBAL por usuário do app. Guarda TODAS as
-  páginas concedidas na autorização do Facebook (tokens, IG vinculado, etc.).
-  O usuário conecta uma vez, concedendo todas as páginas.
+- **`connected_accounts`** — pool GLOBAL por **empresa** (`company_id`). É a fonte
+  de verdade das contas conectadas (Facebook, Instagram-via-Facebook e Instagram
+  direto). A conexão (OAuth) acontece **uma única vez na Visão Geral** e grava aqui;
+  qualquer workspace da empresa (atual ou futuro) enxerga essas contas.
 - **`social_accounts`** — vínculo LOCAL por workspace. Cada linha representa uma
-  página/conta efetivamente usada em um workspace específico. O seletor de páginas
-  cria essas linhas a partir do catálogo, SEM refazer o OAuth (sem revogação).
+  conta efetivamente usada em um workspace. O seletor de contas cria essas linhas
+  a partir do `connected_accounts`, SEM refazer o OAuth (sem revogação).
+- **`meta_page_catalog`** — catálogo legado por usuário (mantido para auto-cura e
+  compatibilidade). O pool por empresa (`connected_accounts`) é o modelo atual.
+
+Conexão: `/api/social/meta/*` e `/api/social/instagram/*` derivam a empresa da
+sessão (via `lib/company.ts`) e gravam em `connected_accounts`. Seleção por
+workspace: `GET/POST /api/social/meta/catalog`. Lista do pool na Visão Geral:
+`GET /api/social/accounts`. Exclusão em massa de workspaces (admins):
+`POST /api/workspaces/bulk-delete`.
+
+---
+
+## Tabela: `connected_accounts`
+
+Pool global de contas conectadas, por empresa. Alimenta o seletor de contas dos workspaces.
+
+| Coluna | Tipo | Null | Descrição |
+|---|---|---|---|
+| `id` | uuid (PK) | NO | Identificador. Default `gen_random_uuid()`. |
+| `company_id` | text | NO | Empresa dona da conexão (`company.id`). |
+| `connected_by_user_id` | text | NO | Usuário do app que conectou (`session.user.id`). |
+| `platform` | text | NO | `facebook` ou `instagram`. |
+| `external_id` | text | NO | ID da entidade na plataforma (page_id do FB ou id da conta IG). |
+| `page_id` | text | YES | ID da página do Facebook (NULL para Instagram direto). |
+| `name` | text | YES | Nome de exibição. |
+| `username` | text | YES | @username (Instagram). |
+| `picture_url` | text | YES | Foto de perfil/página. |
+| `access_token` | text | NO | Token de publicação (page token do FB ou token do IG). |
+| `user_access_token` | text | YES | User Access Token (para auto-cura; NULL no IG direto). |
+| `token_expires_at` | timestamptz | YES | Expiração do token, quando aplicável. |
+| `fb_user_id` | text | YES | ID do usuário do Facebook dono das páginas. |
+| `source` | text | NO | Origem: `facebook` ou `instagram_direct`. Default `facebook`. |
+| `created_at` | timestamptz | NO | Default `now()`. |
+| `updated_at` | timestamptz | NO | Default `now()`. |
+
+Índice único: `(company_id, platform, external_id)`. Índice de busca: `(company_id)`.
 
 ---
 

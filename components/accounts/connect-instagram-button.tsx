@@ -60,12 +60,10 @@ function formatFollowers(n?: number) {
 }
 
 export function ConnectInstagramButton({
-  workspaceId,
   onSuccess,
   label = "Conectar Instagram",
   className,
 }: {
-  workspaceId: string
   onSuccess?: () => void
   label?: string
   className?: string
@@ -113,7 +111,7 @@ export function ConnectInstagramButton({
     const left = Math.round(window.screen.width / 2 - w / 2)
     const top = Math.round(window.screen.height / 2 - h / 2)
     const popup = window.open(
-      `/api/social/instagram/authorize?workspaceId=${workspaceId}`,
+      `/api/social/instagram/authorize`,
       "instagram_oauth",
       `width=${w},height=${h},left=${left},top=${top},toolbar=0,menubar=0,status=0`
     )
@@ -147,7 +145,7 @@ export function ConnectInstagramButton({
         const res = await fetch("/api/social/instagram/process", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, workspaceId, redirectUri }),
+          body: JSON.stringify({ code, redirectUri }),
         })
         const data = await res.json()
 

@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAppUrl } from "@/lib/app-url"
 
+// A conexão Meta agora acontece no nível da EMPRESA (Visão Geral), não por
+// workspace. Não exigimos mais workspaceId — a empresa é derivada da sessão no
+// endpoint /process, e o callback retorna para a página de conexão da empresa.
 export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl
-  const workspaceId = searchParams.get("workspaceId")
-
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId obrigatório" }, { status: 400 })
-  }
-
   const appId = process.env.FACEBOOK_APP_ID
   if (!appId) {
     return NextResponse.json(
@@ -18,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
   const redirectUri = `${getAppUrl(request)}/api/social/meta/callback`
 
-  const state = Buffer.from(JSON.stringify({ workspaceId, redirectUri })).toString("base64")
+  const state = Buffer.from(JSON.stringify({ redirectUri })).toString("base64")
 
   const params = new URLSearchParams({
     client_id: appId,

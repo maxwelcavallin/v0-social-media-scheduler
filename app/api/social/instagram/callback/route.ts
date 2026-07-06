@@ -38,19 +38,12 @@ export async function GET(request: NextRequest) {
 
   const rawState = searchParams.get("state")
 
-  // Validação de state (CSRF)
-  let workspaceId = ""
-  let stateRedirectUri = ""
+  // Validação de state (CSRF). A conexão é no nível da empresa (derivada da
+  // sessão no /process), então o state só precisa carregar o redirectUri.
   try {
-    const decoded = JSON.parse(atob(rawState || ""))
-    workspaceId = decoded.workspaceId || ""
-    stateRedirectUri = decoded.redirectUri || ""
+    JSON.parse(atob(rawState || ""))
   } catch {
     console.error("[Instagram OAuth] State inválido ou ausente:", rawState)
-    return popupResponse({ type: "instagram_oauth_callback", error: "invalid_state", code: null, redirectUri: null })
-  }
-
-  if (!workspaceId) {
     return popupResponse({ type: "instagram_oauth_callback", error: "invalid_state", code: null, redirectUri: null })
   }
 
