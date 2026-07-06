@@ -73,6 +73,51 @@ async function upsertAccount(fields: {
   // O user_access_token salvo permite a auto-cura na publicação (lib/publish).
 }
 
+// Grava/atualiza uma página no CATÁLOGO global do usuário (meta_page_catalog).
+// O catálogo guarda TODAS as páginas concedidas na autorização do Facebook, por
+// usuário do app — independente de workspace. É a fonte do seletor: o usuário
+// conecta uma vez (concedendo todas as páginas) e depois escolhe, em cada
+// workspace, quais páginas usar — sem refazer o OAuth (o que evita a revogação
+// de acesso do Facebook que causava o erro 190 entre contas do mesmo usuário).
+async function upsertCatalogPage(fields: {
+  connectedByUserId: string
+  fbUserId: string | null
+  pageId: string
+  pageName: string
+  pageAccessToken: string
+  userAccessToken: string | null
+  pictureUrl: string | null
+  igBusinessAccountId: string | null
+  igUsername: string | null
+  igName: string | null
+  igProfilePictureUrl: string | null
+}) {
+  await sql`
+    INSERT INTO meta_page_catalog (
+      connected_by_user_id, fb_user_id, page_id, page_name, page_access_token,
+      user_access_token, picture_url, ig_business_account_id, ig_username,
+      ig_name, ig_profile_picture_url, created_at, updated_at
+    )
+    VALUES (
+      ${fields.connectedByUserId}, ${fields.fbUserId}, ${fields.pageId},
+      ${fields.pageName}, ${fields.pageAccessToken}, ${fields.userAccessToken},
+      ${fields.pictureUrl}, ${fields.igBusinessAccountId}, ${fields.igUsername},
+      ${fields.igName}, ${fields.igProfilePictureUrl}, NOW(), NOW()
+    )
+    ON CONFLICT (connected_by_user_id, page_id) DO UPDATE SET
+      fb_user_id             = EXCLUDED.fb_user_id,
+      page_name              = EXCLUDED.page_name,
+      page_access_token      = EXCLUDED.page_access_token,
+      user_access_token      = EXCLUDED.user_access_token,
+      picture_url            = EXCLUDED.picture_url,
+      ig_business_account_id = EXCLUDED.ig_business_account_id,
+      ig_username            = EXCLUDED.ig_username,
+      ig_name                = EXCLUDED.ig_name,
+      ig_profile_picture_url = EXCLUDED.ig_profile_picture_url,
+      updated_at             = NOW()
+  `
+}
+
 export async function POST(request: NextRequest) {
   const session = await getSession()
   if (!session) {
@@ -306,6 +351,24 @@ export async function POST(request: NextRequest) {
       reconnectedAccountIds.push(page.id)
       saved.push({ platform: "facebook", name: page.name })
 
+      // Grava no CATÁLOGO global do usuário — fonte do seletor por workspace.
+      // Assim o usuário conecta uma vez (concedendo todas as páginas) e depois
+      // vincula cada página ao workspace desejado sem refazer o OAuth.
+      const igBiz = page.instagram_business_account
+      await upsertCatalogPage({
+        connectedByUserId: session.user.id,
+        fbUserId: userId ?? null,
+        pageId: page.id,
+        pageName: page.name,
+        pageAccessToken: pageToken,
+        userAccessToken: userToken,
+        pictureUrl: page.picture?.url ?? null,
+        igBusinessAccountId: igBiz?.id ?? null,
+        igUsername: igBiz?.username ?? null,
+        igName: igBiz?.name ?? null,
+        igProfilePictureUrl: igBiz?.profile_picture_url ?? null,
+      })
+
       // Save linked Instagram Business Account
       if (page.instagram_business_account) {
         const ig = page.instagram_business_account
@@ -385,6 +448,17 @@ export async function POST(request: NextRequest) {
             WHERE platform = 'instagram'
               AND page_id  = ${freshPage.id}
               AND workspace_id != ${workspaceId}
+          `
+
+          // Mantém o catálogo do usuário com o token fresco desta página.
+          await sql`
+            UPDATE meta_page_catalog
+            SET page_access_token = ${freshPage.access_token},
+                user_access_token = ${userToken},
+                fb_user_id        = ${userId ?? null},
+                updated_at        = NOW()
+            WHERE connected_by_user_id = ${session.user.id}
+              AND page_id = ${freshPage.id}
           `
 
           console.log(
