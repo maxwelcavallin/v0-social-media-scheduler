@@ -1,8 +1,6 @@
 import { getSession } from "@/lib/session"
 import sql from "@/lib/db"
 import { redirect, notFound } from "next/navigation"
-import { ConnectInstagramButton } from "@/components/accounts/connect-instagram-button"
-import { ConnectMetaButton } from "@/components/accounts/connect-meta-button"
 import { PageSelectorDialog } from "@/components/accounts/page-selector-dialog"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
 import { InstagramTestButton } from "@/components/accounts/instagram-test-button"
@@ -76,8 +74,6 @@ export default async function AccountsPage({ params }: Props) {
         </div>
         <div className="flex items-center gap-2">
           <PageSelectorDialog workspaceId={workspaceId} />
-          <ConnectMetaButton workspaceId={workspaceId} />
-          <ConnectInstagramButton workspaceId={workspaceId} />
         </div>
       </div>
 
@@ -88,14 +84,14 @@ export default async function AccountsPage({ params }: Props) {
             <Instagram className="w-10 h-10 text-white" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-lg font-semibold text-foreground">Nenhuma conta conectada</p>
+            <p className="text-lg font-semibold text-foreground">Nenhuma conta vinculada</p>
             <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
-              Conecte sua conta do Instagram Business ou Creator para começar a agendar posts.
+              Use <strong>Adicionar contas</strong> para vincular a este workspace as contas já conectadas na sua empresa.
             </p>
           </div>
-          <ConnectInstagramButton workspaceId={workspaceId} />
+          <PageSelectorDialog workspaceId={workspaceId} />
           <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
-            Sua conta precisa ser do tipo Business ou Creator. Contas pessoais não são suportadas pela API oficial do Meta.
+            Ainda não conectou nenhuma conta? Vá em <strong>Visão Geral</strong> e conecte suas contas do Facebook e Instagram uma única vez — elas ficarão disponíveis para todos os workspaces.
           </p>
         </div>
       ) : (
