@@ -24,22 +24,31 @@ export async function GET(
       rbp.review_status,
       rbp.review_notes,
       rbp.review_at,
-      -- Conta: prioriza Instagram, fallback Facebook
+      -- Conta via post_targets (posts publicados/agendados)
+      -- Fallback: primeira conta Instagram do workspace, depois Facebook
       COALESCE(
-        MAX(CASE WHEN sa.platform = 'instagram' THEN sa.account_username END),
-        MAX(CASE WHEN sa.platform = 'facebook'  THEN sa.account_username END)
+        MAX(CASE WHEN sa_t.platform = 'instagram' THEN sa_t.account_username END),
+        MAX(CASE WHEN sa_t.platform = 'facebook'  THEN sa_t.account_username END),
+        MAX(CASE WHEN sa_w.platform = 'instagram' THEN sa_w.account_username END),
+        MAX(CASE WHEN sa_w.platform = 'facebook'  THEN sa_w.account_username END)
       ) AS account_username,
       COALESCE(
-        MAX(CASE WHEN sa.platform = 'instagram' THEN sa.account_name END),
-        MAX(CASE WHEN sa.platform = 'facebook'  THEN sa.account_name END)
+        MAX(CASE WHEN sa_t.platform = 'instagram' THEN sa_t.account_name END),
+        MAX(CASE WHEN sa_t.platform = 'facebook'  THEN sa_t.account_name END),
+        MAX(CASE WHEN sa_w.platform = 'instagram' THEN sa_w.account_name END),
+        MAX(CASE WHEN sa_w.platform = 'facebook'  THEN sa_w.account_name END)
       ) AS account_name,
       COALESCE(
-        MAX(CASE WHEN sa.platform = 'instagram' THEN sa.profile_picture_url END),
-        MAX(CASE WHEN sa.platform = 'facebook'  THEN sa.profile_picture_url END)
+        MAX(CASE WHEN sa_t.platform = 'instagram' THEN sa_t.profile_picture_url END),
+        MAX(CASE WHEN sa_t.platform = 'facebook'  THEN sa_t.profile_picture_url END),
+        MAX(CASE WHEN sa_w.platform = 'instagram' THEN sa_w.profile_picture_url END),
+        MAX(CASE WHEN sa_w.platform = 'facebook'  THEN sa_w.profile_picture_url END)
       ) AS profile_picture_url,
       COALESCE(
-        MAX(CASE WHEN sa.platform = 'instagram' THEN sa.platform END),
-        MAX(CASE WHEN sa.platform = 'facebook'  THEN sa.platform END)
+        MAX(CASE WHEN sa_t.platform = 'instagram' THEN sa_t.platform END),
+        MAX(CASE WHEN sa_t.platform = 'facebook'  THEN sa_t.platform END),
+        MAX(CASE WHEN sa_w.platform = 'instagram' THEN sa_w.platform END),
+        MAX(CASE WHEN sa_w.platform = 'facebook'  THEN sa_w.platform END)
       ) AS platform,
       COALESCE(
         json_agg(
@@ -50,8 +59,11 @@ export async function GET(
       ) AS media
     FROM review_batch_posts rbp
     JOIN posts p ON p.id = rbp.post_id::uuid
-    LEFT JOIN post_targets pt ON pt.post_id = p.id
-    LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
+    -- Contas via post_targets (rascunhos com conta já selecionada)
+    LEFT JOIN post_targets pt       ON pt.post_id = p.id
+    LEFT JOIN social_accounts sa_t  ON sa_t.id = pt.social_account_id
+    -- Fallback: qualquer conta do workspace (para rascunhos sem target ainda)
+    LEFT JOIN social_accounts sa_w  ON sa_w.workspace_id = p.workspace_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
     WHERE rbp.batch_id = ${batch.id}
     GROUP BY p.id, p.content, p.status, p.scheduled_at, p.post_type, rbp.position, rbp.review_status, rbp.review_notes, rbp.review_at
