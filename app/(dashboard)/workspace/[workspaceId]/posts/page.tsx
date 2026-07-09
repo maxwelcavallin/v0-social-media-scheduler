@@ -6,12 +6,16 @@ import { Plus, Instagram, Facebook, ImageIcon, Film, LayoutGrid } from "lucide-r
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { CreatePostDialog } from "@/components/posts/create-post-dialog"
 import { StatusFilter } from "@/components/posts/status-filter"
+import { DateRangeFilter } from "@/components/posts/date-range-filter"
 import { WorkspacePostsClient } from "./workspace-posts-client"
 import { Button } from "@/components/ui/button"
 
+const MAX_RANGE_DAYS = 90
+const DEFAULT_DAYS = 15
+
 interface Props {
   params: Promise<{ workspaceId: string }>
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; days?: string; from?: string; to?: string }>
 }
 
 const platformIcons: Record<string, React.ReactNode> = {
@@ -44,7 +48,22 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
   if (!session?.user?.id) redirect("/login")
 
   const { workspaceId } = await params
-  const { status: statusFilter } = await searchParams
+  const { status: statusFilter, days: daysParam, from: fromParam, to: toParam } = await searchParams
+
+  // Calcula o intervalo de datas (padrão: últimos 15 dias)
+  let dateFrom: Date
+  let dateTo: Date = new Date()
+  if (fromParam && toParam) {
+    const from = new Date(fromParam)
+    const to = new Date(toParam)
+    const diff = Math.abs(to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)
+    dateFrom = diff <= MAX_RANGE_DAYS ? from : new Date(Date.now() - DEFAULT_DAYS * 86400000)
+    dateTo = diff <= MAX_RANGE_DAYS ? to : new Date()
+  } else {
+    const days = daysParam ? Math.min(parseInt(daysParam, 10), MAX_RANGE_DAYS) : DEFAULT_DAYS
+    dateFrom = new Date(Date.now() - days * 86400000)
+  }
+  const currentDays = !fromParam ? (daysParam ? parseInt(daysParam, 10) : DEFAULT_DAYS) : null
 
   // Verifica acesso ao workspace
   const workspaceAccess = await sql`
@@ -93,6 +112,8 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
     LEFT JOIN post_targets pt ON pt.post_id = p.id
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     WHERE p.workspace_id = ${workspaceId}
+      AND COALESCE(p.scheduled_at, p.created_at) >= ${dateFrom}
+      AND COALESCE(p.scheduled_at, p.created_at) <= ${dateTo}
       AND (
         ${filterStatus}::text IS NULL
         OR (${isReviewFilter} = false AND p.status = ${filterStatus})
@@ -108,14 +129,23 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
         <h1 className="text-3xl font-bold tracking-tight">{workspace.name} — Posts</h1>
       </div>
 
-      <div className="flex items-center justify-between">
-        <StatusFilter current={filterStatus} />
-        <CreatePostDialog workspaceId={workspaceId} accounts={accounts} trigger={
-          <Button size="sm" className="gap-2" disabled={accounts.length === 0}>
-            <Plus className="w-4 h-4" />
-            Novo post
-          </Button>
-        } />
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <StatusFilter current={filterStatus} />
+          <div className="flex items-center gap-2">
+            <DateRangeFilter
+              currentDays={currentDays}
+              currentFrom={fromParam ?? null}
+              currentTo={toParam ?? null}
+            />
+            <CreatePostDialog workspaceId={workspaceId} accounts={accounts} trigger={
+              <Button size="sm" className="gap-2" disabled={accounts.length === 0}>
+                <Plus className="w-4 h-4" />
+                Novo post
+              </Button>
+            } />
+          </div>
+        </div>
       </div>
 
       {posts.length === 0 ? (

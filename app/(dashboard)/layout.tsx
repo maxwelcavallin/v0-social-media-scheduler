@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation"
+import { Suspense } from "react"
 import { getSession } from "@/lib/session"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { DashboardHeader } from "@/components/dashboard/header"
 import { SessionGuard } from "@/components/session-guard"
+import { NavigationLoadingOverlay } from "@/components/navigation-loading-overlay"
 import sql from "@/lib/db"
 import { getUserPlan } from "@/lib/plans"
 
@@ -44,6 +46,9 @@ export default async function DashboardLayout({
   return (
     <div className="min-h-screen bg-background font-sans flex">
       <SessionGuard />
+      <Suspense>
+        <NavigationLoadingOverlay />
+      </Suspense>
       <DashboardSidebar workspaces={workspaces} user={session.user} plan={plan} company={company} isSuperAdmin={isSuperAdmin} featureFlags={featureFlags} />
       <div className="flex-1 flex flex-col min-w-0">
         <DashboardHeader user={session.user} />
