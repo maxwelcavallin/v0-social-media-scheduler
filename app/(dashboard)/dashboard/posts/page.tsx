@@ -5,8 +5,12 @@ import { Badge } from "@/components/ui/badge"
 import { Instagram, Facebook, ImageIcon, Film, LayoutGrid } from "lucide-react"
 import { EmptyState } from "@/components/dashboard/empty-state"
 import { StatusFilter } from "@/components/posts/status-filter"
+import { DateRangeFilter } from "@/components/posts/date-range-filter"
 import { DashboardPostsFilters } from "@/components/dashboard/dashboard-posts-filters"
 import { PostsGridClient } from "@/components/dashboard/posts-grid-client"
+
+const MAX_RANGE_DAYS = 90
+const DEFAULT_DAYS = 15
 
 const platformIcons: Record<string, React.ReactNode> = {
   instagram: <Instagram className="w-3.5 h-3.5" style={{ color: "oklch(0.52 0.25 15)" }} />,
@@ -36,14 +40,29 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
 }
 
 interface Props {
-  searchParams: Promise<{ status?: string; workspace?: string; account?: string }>
+  searchParams: Promise<{ status?: string; workspace?: string; account?: string; days?: string; from?: string; to?: string }>
 }
 
 export default async function DashboardPostsPage({ searchParams }: Props) {
   const session = await getSession()
   if (!session) redirect("/login")
 
-  const { status: statusFilter, workspace: workspaceFilter, account: accountFilter } = await searchParams
+  const { status: statusFilter, workspace: workspaceFilter, account: accountFilter, days: daysParam, from: fromParam, to: toParam } = await searchParams
+
+  // Calcula o intervalo de datas (padrão: últimos 15 dias)
+  let dateFrom: Date
+  let dateTo: Date = new Date()
+  if (fromParam && toParam) {
+    const from = new Date(fromParam)
+    const to = new Date(toParam)
+    const diff = Math.abs(to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)
+    dateFrom = diff <= MAX_RANGE_DAYS ? from : new Date(Date.now() - DEFAULT_DAYS * 86400000)
+    dateTo = diff <= MAX_RANGE_DAYS ? to : new Date()
+  } else {
+    const days = daysParam ? Math.min(parseInt(daysParam, 10), MAX_RANGE_DAYS) : DEFAULT_DAYS
+    dateFrom = new Date(Date.now() - days * 86400000)
+  }
+  const currentDays = !fromParam ? (daysParam ? parseInt(daysParam, 10) : DEFAULT_DAYS) : null
 
   const filterStatus    = statusFilter  && validStatuses.includes(statusFilter)  ? statusFilter  : null
   const filterWorkspace = workspaceFilter || null
@@ -99,6 +118,8 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
       WHERE m.user_id = ${session.user.id}
+        AND COALESCE(p.scheduled_at, p.created_at) >= ${dateFrom}
+        AND COALESCE(p.scheduled_at, p.created_at) <= ${dateTo}
         AND (${filterWorkspace}::text IS NULL OR p.workspace_id::text = ${filterWorkspace})
         AND (
           ${filterAccount}::text IS NULL
@@ -125,7 +146,14 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
 
       {/* Filtros */}
       <div className="flex flex-col gap-3">
-        <StatusFilter current={filterStatus} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <StatusFilter current={filterStatus} />
+          <DateRangeFilter
+            currentDays={currentDays}
+            currentFrom={fromParam ?? null}
+            currentTo={toParam ?? null}
+          />
+        </div>
         <DashboardPostsFilters
           workspaces={workspaces as any}
           accounts={accounts as any}
