@@ -19,7 +19,7 @@ export async function GET(
       p.content,
       p.status,
       p.scheduled_at,
-      p.post_type,
+      p.post_types,
       rbp.position,
       rbp.review_status,
       rbp.review_notes,
@@ -49,12 +49,12 @@ export async function GET(
         '[]'
       ) AS media
     FROM review_batch_posts rbp
-    JOIN posts p ON p.id = rbp.post_id
+    JOIN posts p ON p.id = rbp.post_id::uuid
     LEFT JOIN post_targets pt ON pt.post_id = p.id
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
     WHERE rbp.batch_id = ${batch.id}
-    GROUP BY p.id, p.content, p.status, p.scheduled_at, p.post_type, rbp.position, rbp.review_status, rbp.review_notes, rbp.review_at
+    GROUP BY p.id, p.content, p.status, p.scheduled_at, p.post_types, rbp.position, rbp.review_status, rbp.review_notes, rbp.review_at
     ORDER BY rbp.position ASC
   `
 
@@ -93,7 +93,7 @@ export async function POST(
   await sql`
     UPDATE posts
     SET review_status = ${decision}, review_notes = ${notes ?? null}, review_at = NOW(), updated_at = NOW()
-    WHERE id = ${postId}
+    WHERE id = ${postId}::uuid
   `
 
   return NextResponse.json({ success: true })

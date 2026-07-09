@@ -44,8 +44,20 @@ export function WorkspacePostsClient({
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
 
   // Posts que são rascunhos (disponíveis para enviar à revisão)
+  // Mapeia para a interface esperada pelo SendReviewDialog
   const draftPosts = useMemo(() =>
-    posts.filter((p: any) => p.status === "draft"),
+    posts
+      .filter((p: any) => p.status === "draft")
+      .map((p: any) => ({
+        id: p.id,
+        content: p.content ?? null,
+        scheduled_at: p.scheduled_at ?? null,
+        post_types: p.post_types ?? [],
+        media_count: Number(p.media_count ?? 0),
+        thumbnail: p.thumbnail ?? p.primary_media_url ?? null,
+        primary_media_type: p.primary_media_type ?? null,
+        platforms: p.platforms ?? null,
+      })),
     [posts]
   )
 

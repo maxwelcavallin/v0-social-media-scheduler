@@ -21,9 +21,10 @@ export async function POST(request: NextRequest) {
 
   try {
     // Verifica que todos os posts pertencem ao workspace do usuário
+    // posts.id é uuid — cast correto é ::uuid[]
     const owned = await sql`
       SELECT id FROM posts
-      WHERE id = ANY(${postIds}::text[])
+      WHERE id = ANY(${postIds}::uuid[])
         AND workspace_id = ${workspaceId}
         AND status = 'draft'
     `
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < postIds.length; i++) {
       await sql`
         INSERT INTO review_batch_posts (batch_id, post_id, position, review_status)
-        VALUES (${batch.id}, ${postIds[i]}, ${i}, 'in_review')
+        VALUES (${batch.id}, ${postIds[i]}, ${i}, 'pending')
       `
     }
 
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
     await sql`
       UPDATE posts
       SET review_status = 'in_review', updated_at = NOW()
-      WHERE id = ANY(${postIds}::text[])
+      WHERE id = ANY(${postIds}::uuid[])
     `
 
     const baseUrl = request.nextUrl.origin

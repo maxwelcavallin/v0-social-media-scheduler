@@ -112,8 +112,14 @@ export default async function WorkspacePostsPage({ params, searchParams }: Props
     LEFT JOIN post_targets pt ON pt.post_id = p.id
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     WHERE p.workspace_id = ${workspaceId}
-      AND COALESCE(p.scheduled_at, p.created_at) >= ${dateFrom}
-      AND COALESCE(p.scheduled_at, p.created_at) <= ${dateTo}
+      AND (
+        -- Posts futuros (agendados) sempre aparecem, independente do filtro de data
+        p.scheduled_at > NOW()
+        OR (
+          COALESCE(p.scheduled_at, p.created_at) >= ${dateFrom}
+          AND COALESCE(p.scheduled_at, p.created_at) <= ${dateTo}
+        )
+      )
       AND (
         ${filterStatus}::text IS NULL
         OR (${isReviewFilter} = false AND p.status = ${filterStatus})
