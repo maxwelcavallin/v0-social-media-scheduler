@@ -1,13 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PostDetailsDialog } from "@/components/posts/post-details-dialog"
 import { VideoThumbnail } from "@/components/posts/video-thumbnail"
 import { PostActions } from "@/components/posts/post-actions"
-import { ImageIcon, MessageSquare, LayoutGrid, List } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { ImageIcon, MessageSquare, LayoutGrid, List, Instagram, Facebook, Users, ChevronsUpDown, Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface WorkspacePostsClientProps {
@@ -35,7 +38,17 @@ export function WorkspacePostsClient({
 }: WorkspacePostsClientProps) {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
-  const selectedPost = posts.find(p => p.id === selectedPostId)
+  const [filterAccountId, setFilterAccountId] = useState<string>("all")
+  const [accOpen, setAccOpen] = useState(false)
+
+  const filteredPosts = useMemo(() => {
+    if (filterAccountId === "all") return posts
+    return posts.filter((post: any) =>
+      (post.account_ids || []).includes(filterAccountId)
+    )
+  }, [posts, filterAccountId])
+
+  const selectedPost = filteredPosts.find(p => p.id === selectedPostId)
 
   // Carregar preferência de cookie
   useEffect(() => {
@@ -66,11 +79,101 @@ export function WorkspacePostsClient({
     hour: "2-digit", minute: "2-digit",
   }).format(d)
 
+  const selectedAccount = accounts.find((a: any) => a.id === filterAccountId)
+
   return (
     <>
-      {/* Toggle de visualização */}
-      <div className="flex justify-end mb-4">
-        <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30">
+      {/* Filtros + Toggle de visualização */}
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        {/* Filtro de conta */}
+        {accounts.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Popover open={accOpen} onOpenChange={setAccOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={accOpen}
+                  className="h-9 w-[200px] justify-between text-sm font-normal"
+                >
+                  {selectedAccount ? (
+                    <span className="flex items-center gap-2 truncate">
+                      <Avatar className="w-5 h-5 shrink-0">
+                        <AvatarImage src={selectedAccount.profile_picture_url || undefined} />
+                        <AvatarFallback className="text-[10px]">
+                          {selectedAccount.platform === "instagram"
+                            ? <Instagram className="w-3 h-3" style={{ color: "#C13584" }} />
+                            : <Facebook className="w-3 h-3 text-blue-600" />}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="truncate">
+                        {selectedAccount.account_username ? `@${selectedAccount.account_username}` : selectedAccount.account_name}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <Users className="w-3.5 h-3.5" />
+                      Todas as contas
+                    </span>
+                  )}
+                  <ChevronsUpDown className="ml-1 w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[220px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar conta..." className="h-9" />
+                  <CommandList>
+                    <CommandEmpty>Nenhuma conta encontrada.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="all"
+                        onSelect={() => { setFilterAccountId("all"); setAccOpen(false) }}
+                      >
+                        <Check className={cn("mr-2 w-4 h-4", filterAccountId === "all" ? "opacity-100" : "opacity-0")} />
+                        <Users className="w-4 h-4 mr-1.5 text-muted-foreground" />
+                        Todas as contas
+                      </CommandItem>
+                      {accounts.map((acc: any) => (
+                        <CommandItem
+                          key={acc.id}
+                          value={`${acc.account_username || ""} ${acc.account_name || ""}`}
+                          onSelect={() => { setFilterAccountId(acc.id); setAccOpen(false) }}
+                        >
+                          <Check className={cn("mr-2 w-4 h-4", filterAccountId === acc.id ? "opacity-100" : "opacity-0")} />
+                          <Avatar className="w-5 h-5 mr-1.5 shrink-0">
+                            <AvatarImage src={acc.profile_picture_url || undefined} />
+                            <AvatarFallback className="text-[10px]">
+                              {acc.platform === "instagram"
+                                ? <Instagram className="w-3 h-3" style={{ color: "#C13584" }} />
+                                : <Facebook className="w-3 h-3 text-blue-600" />}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="truncate">
+                            {acc.account_username ? `@${acc.account_username}` : acc.account_name}
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            {filterAccountId !== "all" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                onClick={() => setFilterAccountId("all")}
+              >
+                <X className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Toggle de visualização */}
+        <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30 ml-auto">
           <Button
             variant={viewMode === "grid" ? "secondary" : "ghost"}
             size="sm"
@@ -95,7 +198,7 @@ export function WorkspacePostsClient({
            VISUALIZAÇÃO EM GRID (igual ao dashboard — 4 colunas em xl)
            ════════════════════════════════════════════════════════════════ */
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {posts.map((post: any) => {
+          {filteredPosts.map((post: any) => {
             const postType = (post.post_types || [])[0] || "feed"
             const displayStatus = post.review_status && reviewStatuses.includes(post.review_status)
               ? post.review_status
@@ -224,7 +327,7 @@ export function WorkspacePostsClient({
            VISUALIZAÇÃO EM LISTA (compacta)
            ════════════════════════════════════════════════════════════════ */
         <div className="flex flex-col gap-2">
-          {posts.map((post: any) => {
+          {filteredPosts.map((post: any) => {
             const postType = (post.post_types || [])[0] || "feed"
             const displayStatus = post.review_status && reviewStatuses.includes(post.review_status)
               ? post.review_status

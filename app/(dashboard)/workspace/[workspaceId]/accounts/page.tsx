@@ -5,10 +5,12 @@ import { PageSelectorDialog } from "@/components/accounts/page-selector-dialog"
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button"
 import { InstagramTestButton } from "@/components/accounts/instagram-test-button"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
+import { Instagram, Facebook, AlertTriangle, CheckCircle2, XCircle, ArrowRight } from "lucide-react"
 import { WebhookPanel } from "@/components/accounts/webhook-panel"
 import { ReconnectAccountButton } from "@/components/accounts/reconnect-account-button"
+import Link from "next/link"
 
 interface Props {
   params: Promise<{ workspaceId: string }>
@@ -79,20 +81,48 @@ export default async function AccountsPage({ params }: Props) {
 
 
       {accounts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-5 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#833AB4] via-[#FD1D1D] to-[#F77737] flex items-center justify-center">
-            <Instagram className="w-10 h-10 text-white" />
+        <div className="flex flex-col items-center justify-center py-20 gap-6 text-center">
+          {/* Ícones das duas plataformas */}
+          <div className="flex items-center gap-3">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 flex items-center justify-center">
+              <Facebook className="w-8 h-8 text-blue-600" />
+            </div>
+            <div className="w-16 h-16 rounded-2xl bg-pink-50 dark:bg-pink-950/30 border border-pink-100 dark:border-pink-900 flex items-center justify-center">
+              <Instagram className="w-8 h-8" style={{ color: "#C13584" }} />
+            </div>
           </div>
+
           <div className="flex flex-col gap-1.5">
             <p className="text-lg font-semibold text-foreground">Nenhuma conta vinculada</p>
             <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
-              Use <strong>Adicionar contas</strong> para vincular a este workspace as contas já conectadas na sua empresa.
+              Primeiro conecte suas contas na <strong>Visão Geral</strong> e depois selecione quais deseja usar neste workspace.
             </p>
           </div>
-          <PageSelectorDialog workspaceId={workspaceId} />
-          <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
-            Ainda não conectou nenhuma conta? Vá em <strong>Visão Geral</strong> e conecte suas contas do Facebook e Instagram uma única vez — elas ficarão disponíveis para todos os workspaces.
-          </p>
+
+          {/* Botões que levam para a Visão Geral (onde a conexão acontece) */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <Button asChild variant="outline" className="gap-2 w-full sm:w-auto">
+              <Link href="/dashboard">
+                <Facebook className="w-4 h-4 text-blue-600" />
+                Conectar via Facebook
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="gap-2 w-full sm:w-auto">
+              <Link href="/dashboard">
+                <Instagram className="w-4 h-4" style={{ color: "#C13584" }} />
+                Conectar Instagram
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+              </Link>
+            </Button>
+          </div>
+
+          <div className="border-t border-border pt-4 w-full max-w-xs">
+            <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+              Contas já conectadas? Vincule-as a este workspace:
+            </p>
+            <PageSelectorDialog workspaceId={workspaceId} />
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-8">
