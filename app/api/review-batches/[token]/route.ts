@@ -19,7 +19,7 @@ export async function GET(
       p.content,
       p.status,
       p.scheduled_at,
-      p.post_types,
+      p.post_type,
       rbp.position,
       rbp.review_status,
       rbp.review_notes,
@@ -45,7 +45,7 @@ export async function GET(
         json_agg(
           json_build_object('url', pm.url, 'media_type', pm.media_type, 'order_index', pm.order_index)
           ORDER BY pm.order_index
-        ) FILTER (WHERE pm.id IS NOT NULL AND pm.media_type != 'cover'),
+        ) FILTER (WHERE pm.id IS NOT NULL),
         '[]'
       ) AS media
     FROM review_batch_posts rbp
@@ -54,7 +54,7 @@ export async function GET(
     LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
     LEFT JOIN post_media pm ON pm.post_id = p.id
     WHERE rbp.batch_id = ${batch.id}
-    GROUP BY p.id, p.content, p.status, p.scheduled_at, p.post_types, rbp.position, rbp.review_status, rbp.review_notes, rbp.review_at
+    GROUP BY p.id, p.content, p.status, p.scheduled_at, p.post_type, rbp.position, rbp.review_status, rbp.review_notes, rbp.review_at
     ORDER BY rbp.position ASC
   `
 
