@@ -118,8 +118,14 @@ export default async function DashboardPostsPage({ searchParams }: Props) {
       LEFT JOIN social_accounts sa ON sa.id = pt.social_account_id
       LEFT JOIN post_media pm ON pm.post_id = p.id
       WHERE m.user_id = ${session.user.id}
-        AND COALESCE(p.scheduled_at, p.created_at) >= ${dateFrom}
-        AND COALESCE(p.scheduled_at, p.created_at) <= ${dateTo}
+        AND (
+          -- Posts futuros (agendados) sempre aparecem, independente do filtro de data
+          p.scheduled_at > NOW()
+          OR (
+            COALESCE(p.scheduled_at, p.created_at) >= ${dateFrom}
+            AND COALESCE(p.scheduled_at, p.created_at) <= ${dateTo}
+          )
+        )
         AND (${filterWorkspace}::text IS NULL OR p.workspace_id::text = ${filterWorkspace})
         AND (
           ${filterAccount}::text IS NULL
