@@ -10,7 +10,8 @@ import { PostActions } from "@/components/posts/post-actions"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { ImageIcon, MessageSquare, LayoutGrid, List, Instagram, Facebook, Users, ChevronsUpDown, Check, X } from "lucide-react"
+import { SendReviewDialog } from "@/components/posts/send-review-dialog"
+import { ImageIcon, MessageSquare, LayoutGrid, List, Instagram, Facebook, Users, ChevronsUpDown, Check, X, SendHorizonal } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface WorkspacePostsClientProps {
@@ -40,6 +41,13 @@ export function WorkspacePostsClient({
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
   const [filterAccountId, setFilterAccountId] = useState<string>("all")
   const [accOpen, setAccOpen] = useState(false)
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
+
+  // Posts que são rascunhos (disponíveis para enviar à revisão)
+  const draftPosts = useMemo(() =>
+    posts.filter((p: any) => p.status === "draft"),
+    [posts]
+  )
 
   const filteredPosts = useMemo(() => {
     if (filterAccountId === "all") return posts
@@ -83,6 +91,13 @@ export function WorkspacePostsClient({
 
   return (
     <>
+      <SendReviewDialog
+        open={reviewDialogOpen}
+        onOpenChange={setReviewDialogOpen}
+        workspaceId={workspaceId}
+        posts={draftPosts}
+      />
+
       {/* Filtros + Toggle de visualização */}
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         {/* Filtro de conta */}
@@ -172,8 +187,20 @@ export function WorkspacePostsClient({
           </div>
         )}
 
-        {/* Toggle de visualização */}
-        <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30 ml-auto">
+        {/* Botão enviar para revisão + Toggle de visualização */}
+        <div className="flex items-center gap-2 ml-auto">
+          {draftPosts.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-9"
+              onClick={() => setReviewDialogOpen(true)}
+            >
+              <SendHorizonal className="w-4 h-4" />
+              Enviar para aprovação
+            </Button>
+          )}
+          <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/30">
           <Button
             variant={viewMode === "grid" ? "secondary" : "ghost"}
             size="sm"
