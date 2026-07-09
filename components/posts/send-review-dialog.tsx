@@ -7,15 +7,17 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Search, Send, Loader2, Copy, Check, ExternalLink, ImageIcon, FileText } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Search, Send, Loader2, Copy, Check, ExternalLink, ImageIcon, FileText, CalendarDays, Video } from "lucide-react"
 
 interface DraftPost {
   id: string
   content: string | null
   scheduled_at: string | null
-  post_type?: string
+  post_types?: string[]
   media_count?: number
+  thumbnail?: string | null
+  primary_media_type?: string | null
+  platforms?: string[] | null
 }
 
 interface SendReviewDialogProps {
@@ -33,7 +35,6 @@ export function SendReviewDialog({ open, onOpenChange, workspaceId, posts }: Sen
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Reseta ao abrir
   useEffect(() => {
     if (open) {
       setQuery("")
@@ -45,15 +46,11 @@ export function SendReviewDialog({ open, onOpenChange, workspaceId, posts }: Sen
     }
   }, [open])
 
-  const drafts = useMemo(() => posts.filter(p => !p.id || true), [posts])
-
   const filtered = useMemo(() => {
-    if (!query.trim()) return drafts
+    if (!query.trim()) return posts
     const q = query.toLowerCase()
-    return drafts.filter(p =>
-      (p.content || "").toLowerCase().includes(q)
-    )
-  }, [drafts, query])
+    return posts.filter(p => (p.content || "").toLowerCase().includes(q))
+  }, [posts, query])
 
   const allSelected = filtered.length > 0 && filtered.every(p => selected.has(p.id))
 
@@ -89,10 +86,7 @@ export function SendReviewDialog({ open, onOpenChange, workspaceId, posts }: Sen
       const res = await fetch("/api/review-batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postIds: Array.from(selected),
-          workspaceId,
-        }),
+        body: JSON.stringify({ postIds: Array.from(selected), workspaceId }),
       })
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || "Erro ao criar lote")
@@ -111,131 +105,174 @@ export function SendReviewDialog({ open, onOpenChange, workspaceId, posts }: Sen
     setTimeout(() => setCopied(false), 2500)
   }
 
-  const preview = (content: string | null) => {
-    if (!content) return "Sem legenda"
-    return content.length > 80 ? content.slice(0, 80) + "…" : content
+  function formatDate(dateStr: string | null) {
+    if (!dateStr) return null
+    return new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
   }
+
+  function preview(content: string | null) {
+    if (!content || !content.trim()) return null
+    return content.length > 90 ? content.slice(0, 90) + "…" : content
+  }
+
+  const isVideo = (post: DraftPost) =>
+    post.primary_media_type === "video" || (post.post_types || []).some(t => t === "reel" || t === "story_video")
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-lg">
+      <DialogContent className="w-full max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0">
         {!result ? (
           <>
-            <DialogHeader>
-              <DialogTitle>Enviar para aprovação</DialogTitle>
-              <DialogDescription>
-                Selecione os rascunhos que deseja enviar para revisão. Um link único será gerado para o aprovador.
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* Busca */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <Input
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                placeholder="Buscar por legenda..."
-                className="pl-8 h-9"
-              />
+            <div className="px-6 pt-6 pb-4 border-b border-border">
+              <DialogHeader>
+                <DialogTitle>Enviar para aprovação</DialogTitle>
+                <DialogDescription>
+                  Selecione os rascunhos que deseja enviar para revisão. Um link único será gerado para o aprovador navegar post a post.
+                </DialogDescription>
+              </DialogHeader>
             </div>
 
-            {/* Selecionar todos */}
-            <div className="flex items-center justify-between px-1">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-                <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
-                Selecionar todos {query ? `(${filtered.length})` : ""}
-              </label>
-              <span className="text-xs text-muted-foreground">{selected.size} selecionado(s)</span>
-            </div>
-
-            {/* Lista */}
-            {filtered.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-8 text-center">
-                <FileText className="w-8 h-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  {query ? `Nenhum rascunho encontrado para "${query}".` : "Nenhum rascunho disponível para revisão."}
-                </p>
+            <div className="px-6 py-3 flex flex-col gap-3 flex-1 min-h-0">
+              {/* Busca */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Buscar por legenda..."
+                  className="pl-8 h-9"
+                />
               </div>
-            ) : (
-              <ScrollArea className="h-64">
-                <div className="flex flex-col gap-1.5 pr-3">
-                  {filtered.map(post => (
-                    <label
-                      key={post.id}
-                      htmlFor={`post-${post.id}`}
-                      className="flex items-start gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50 transition-colors min-w-0"
-                    >
-                      <Checkbox
-                        id={`post-${post.id}`}
-                        checked={selected.has(post.id)}
-                        onCheckedChange={() => toggle(post.id)}
-                        className="shrink-0 mt-0.5"
-                      />
-                      {/* Thumbnail ou ícone */}
-                      <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                        {(post.media_count ?? 0) > 0
-                          ? <ImageIcon className="w-5 h-5 text-muted-foreground" />
-                          : <FileText className="w-5 h-5 text-muted-foreground" />}
-                      </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <p className="text-sm font-medium text-foreground truncate leading-tight">
-                          {preview(post.content)}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {post.post_type && (
-                            <Badge variant="outline" className="text-xs px-1.5 py-0 capitalize h-4">
-                              {post.post_type}
-                            </Badge>
-                          )}
-                          {post.scheduled_at && (
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(post.scheduled_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
+
+              {/* Selecionar todos */}
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                  <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
+                  Selecionar todos {query ? `(${filtered.length})` : `(${posts.length})`}
+                </label>
+                <span className="text-xs text-muted-foreground">{selected.size} selecionado(s)</span>
+              </div>
+
+              {/* Lista */}
+              {filtered.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-center">
+                  <FileText className="w-8 h-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {query
+                      ? `Nenhum rascunho encontrado para "${query}".`
+                      : "Nenhum rascunho disponível para revisão."}
+                  </p>
                 </div>
-              </ScrollArea>
+              ) : (
+                <ScrollArea className="flex-1 min-h-0 h-72">
+                  <div className="flex flex-col gap-2 pr-3">
+                    {filtered.map(post => {
+                      const text = preview(post.content)
+                      const date = formatDate(post.scheduled_at)
+                      const hasMedia = (post.media_count ?? 0) > 0
+                      const video = isVideo(post)
+
+                      return (
+                        <label
+                          key={post.id}
+                          htmlFor={`post-${post.id}`}
+                          className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/40 transition-colors min-w-0 group"
+                        >
+                          <Checkbox
+                            id={`post-${post.id}`}
+                            checked={selected.has(post.id)}
+                            onCheckedChange={() => toggle(post.id)}
+                            className="shrink-0"
+                          />
+
+                          {/* Thumbnail */}
+                          <div className="w-12 h-12 rounded-md bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
+                            {post.thumbnail ? (
+                              <img
+                                src={post.thumbnail}
+                                alt=""
+                                className="w-full h-full object-cover"
+                              />
+                            ) : video ? (
+                              <Video className="w-5 h-5 text-muted-foreground" />
+                            ) : hasMedia ? (
+                              <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                            ) : (
+                              <FileText className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </div>
+
+                          {/* Conteúdo */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-foreground leading-snug line-clamp-2">
+                              {text ?? <span className="italic text-muted-foreground">Sem legenda</span>}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                              {(post.post_types || []).filter(Boolean).map(t => (
+                                <Badge key={t} variant="outline" className="text-xs px-1.5 py-0 capitalize h-4">
+                                  {t}
+                                </Badge>
+                              ))}
+                              {date && (
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <CalendarDays className="w-3 h-3" />
+                                  {date}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+
+            {error && (
+              <div className="px-6 pb-2">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
             )}
 
-            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-
-            <DialogFooter>
+            <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={sending}>
                 Cancelar
               </Button>
               <Button onClick={handleSend} disabled={sending || selected.size === 0} className="gap-2">
                 {sending
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando link...</>
-                  : <><Send className="w-4 h-4" /> Gerar link {selected.size > 0 ? `(${selected.size})` : ""}</>}
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Gerando link...</>
+                  : <><Send className="w-4 h-4" />Gerar link{selected.size > 0 ? ` (${selected.size})` : ""}</>}
               </Button>
-            </DialogFooter>
+            </div>
           </>
         ) : (
-          /* Tela de sucesso com link */
+          /* Tela de sucesso */
           <>
-            <DialogHeader>
-              <DialogTitle>Link de revisão gerado</DialogTitle>
-              <DialogDescription>
-                Compartilhe este link com o aprovador. Ele poderá revisar os {selected.size} post(s) selecionado(s) sem precisar de login.
-              </DialogDescription>
-            </DialogHeader>
+            <div className="px-6 pt-6 pb-4">
+              <DialogHeader>
+                <DialogTitle>Link de revisão gerado</DialogTitle>
+                <DialogDescription>
+                  Compartilhe este link com o aprovador. Ele poderá revisar os {selected.size} post(s) selecionado(s) sem precisar de login.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="px-6 pb-4 flex flex-col gap-3">
               <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
                 <span className="text-sm text-foreground truncate flex-1 font-mono">{result.url}</span>
                 <Button size="sm" variant="ghost" onClick={handleCopy} className="shrink-0 gap-1.5 h-8">
-                  {copied ? <><Check className="w-3.5 h-3.5 text-emerald-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                  {copied
+                    ? <><Check className="w-3.5 h-3.5 text-emerald-600" />Copiado</>
+                    : <><Copy className="w-3.5 h-3.5" />Copiar</>}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Os posts selecionados foram marcados como <strong>Em revisão</strong>. O aprovador irá navegar por cada post em sequência.
+                Os posts foram marcados como <strong>Em revisão</strong>. O aprovador navega por cada post em sequência.
               </p>
             </div>
 
-            <DialogFooter>
+            <div className="px-6 py-4 border-t border-border flex justify-end gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Fechar
               </Button>
@@ -245,7 +282,7 @@ export function SendReviewDialog({ open, onOpenChange, workspaceId, posts }: Sen
                   Visualizar revisão
                 </a>
               </Button>
-            </DialogFooter>
+            </div>
           </>
         )}
       </DialogContent>
